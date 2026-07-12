@@ -39,14 +39,14 @@ def test_wrong_pin_locks_out_and_shuts_down(running_server):
     session, connect = running_server
     conn = connect()
     cookie = _get_token_cookie(session, conn)
-    last = None
-    for _ in range(3):
+    statuses = []
+    for _ in range(3):  # fixture max_pin_attempts == 3
         conn = connect()
         conn.request("POST", "/auth", body=json.dumps({"pin": "000000"}),
                      headers={"Cookie": cookie, "Content-Type": "application/json"})
-        last = conn.getresponse().status
+        statuses.append(conn.getresponse().status)
     assert session.locked_out is True
-    assert last in (401, 423)
+    assert statuses == [401, 401, 423]
 
 
 def test_upload_requires_auth(running_server):
@@ -70,3 +70,78 @@ def test_upload_rejects_disallowed_type(running_server):
                  headers={"Cookie": cookie, "X-Filename": "evil.exe",
                           "Content-Type": "application/octet-stream", "Content-Length": "1"})
     assert conn.getresponse().status == 400
+
+
+def test_upload_rejects_oversize_file(running_server):
+    session, connect = running_server
+    conn = connect()
+    cookie = _get_token_cookie(session, conn)
+    conn.request("POST", "/auth", body=json.dumps({"pin": session.pin}),
+                 headers={"Cookie": cookie, "Content-Type": "application/json"})
+    conn.getresponse().read()
+    big = b"x" * 5000  # fixture max_file_bytes is 1024
+    conn = connect()
+    conn.request("POST", "/upload", body=big,
+                 headers={"Cookie": cookie, "X-Filename": "big.jpg",
+                          "Content-Type": "image/jpeg", "Content-Length": str(len(big))})
+    assert conn.getresponse().status == 400
+
+
+def test_upload_bad_content_length_is_rejected(running_server):
+    session, connect = running_server
+    conn = connect()
+    cookie = _get_token_cookie(session, conn)
+    conn.request("POST", "/auth", body=json.dumps({"pin": session.pin}),
+                 headers={"Cookie": cookie, "Content-Type": "application/json"})
+    conn.getresponse().read()
+    conn = connect()
+    conn.putrequest("POST", "/upload")
+    conn.putheader("Cookie", cookie)
+    conn.putheader("X-Filename", "a.jpg")
+    conn.putheader("Content-Type", "image/jpeg")
+    conn.putheader("Content-Length", "notanumber")
+    conn.endheaders()
+    assert conn.getresponse().status == 400
+
+
+def test_off_subnet_client_is_forbidden(running_server, monkeypatch):
+    session, connect = running_server
+    import iphone_photo_drop.server as server_mod
+    monkeypatch.setattr(server_mod.net, "client_in_subnet", lambda *a, **k: False)
+    conn = connect()
+    conn.request("GET", f"/?t={session.token}")
+    assert conn.getresponse().status == 403
+
+
+def test_lockout_triggers_on_shutdown_callback(cert_pair, tmp_path):
+    import http.client
+    import ssl
+    import threading
+
+    from iphone_photo_drop.server import ReceiverServer
+    from iphone_photo_drop.session import Session
+
+    cert, key = cert_pair
+    fired = threading.Event()
+    session = Session("tok-abcdefghij-0123456789", "123456", max_pin_attempts=1)
+    server = ReceiverServer(
+        host="127.0.0.1", port=0, session=session, destination_dir=tmp_path / "inbox",
+        cert_path=cert, key_path=key, max_file_bytes=1024, max_session_bytes=1_000_000,
+        chunk_bytes=64, subnet_prefix=24, on_shutdown=fired.set,
+    )
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    try:
+        port = server.server_address[1]
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        conn = http.client.HTTPSConnection("127.0.0.1", port, context=ctx)
+        conn.request("POST", "/auth", body=json.dumps({"pin": "000000"}),
+                     headers={"Cookie": "t=tok-abcdefghij-0123456789",
+                              "Content-Type": "application/json"})
+        assert conn.getresponse().status == 423
+        assert fired.wait(timeout=2.0) is True
+    finally:
+        server.shutdown()
+        server.server_close()

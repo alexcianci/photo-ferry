@@ -71,6 +71,27 @@ class Session:
             self._failed += 1
             return self._failed
 
+    def check_pin(self, provided: str | None) -> str:
+        """Atomically verify one PIN attempt under the session lock.
+
+        Returns 'ok' (correct; session marked authed), 'locked' (already at the
+        attempt limit, or this failure reached it), or 'wrong' (incorrect, attempts
+        remain). Serializing check->verify->register in one critical section closes
+        the race where parallel requests each pass the lockout gate before the
+        counter increments.
+        """
+        with self._lock:
+            if self._failed >= self.max_pin_attempts:
+                return "locked"
+            if security.verify_pin(self.pin, provided):
+                self._authed = True
+                self._last_activity = self._clock()
+                return "ok"
+            self._failed += 1
+            if self._failed >= self.max_pin_attempts:
+                return "locked"
+            return "wrong"
+
     def mark_authed(self) -> None:
         with self._lock:
             self._authed = True

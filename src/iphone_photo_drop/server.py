@@ -51,6 +51,9 @@ class ReceiverServer(ThreadingHTTPServer):
         self.socket = ctx.wrap_socket(self.socket, server_side=True)
 
     def trigger_shutdown(self) -> None:
+        """Invoke the optional shutdown callback. The callback MUST be idempotent
+        and MUST NOT call `self.shutdown()` from a request-handler thread (that
+        deadlocks ThreadingHTTPServer); the UI thread owns actual shutdown."""
         if self.on_shutdown:
             self.on_shutdown()
 
@@ -128,8 +131,16 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(HTTPStatus.NOT_FOUND, b"not found")
 
+    def _content_length(self) -> int:
+        raw = self.headers.get("Content-Length", "0")
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            return 0
+        return n if n >= 0 else 0
+
     def _read_body(self):
-        length = int(self.headers.get("Content-Length", "0"))
+        length = self._content_length()
         return self.rfile.read(length) if length else b""
 
     def _handle_auth(self):
@@ -137,28 +148,25 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._valid_token_cookie():
             self._send(HTTPStatus.FORBIDDEN, b"no token")
             return
-        if session.locked_out:
-            self._send(HTTPStatus.LOCKED, b"locked out")
-            self.app.trigger_shutdown()
-            return
         try:
             data = json.loads(self._read_body() or b"{}")
             pin = str(data.get("pin", ""))
         except (ValueError, TypeError):
             pin = ""
-        if security.verify_pin(session.pin, pin):
-            session.mark_authed()
+        result = session.check_pin(pin)
+        if result == "ok":
             self._send(HTTPStatus.OK, b"ok")
-            return
-        attempts = session.register_failure()
-        if attempts >= session.max_pin_attempts:
+        elif result == "locked":
             self._send(HTTPStatus.LOCKED, b"locked out")
             self.app.trigger_shutdown()
-        else:
+        else:  # "wrong"
             self._send(HTTPStatus.UNAUTHORIZED, b"wrong pin")
 
     def _handle_upload(self):
         session = self.app.session
+        # Design note: `session.authed` is a single sticky flag for the one active
+        # session (single-phone model). The token is LAN-only, HTTPS, idle-timed, and
+        # shown only briefly, so binding auth to the connection is intentionally omitted.
         if not self._valid_token_cookie() or not session.authed:
             self._reject_upload(HTTPStatus.UNAUTHORIZED, b"not authed")
             return
@@ -167,7 +175,10 @@ class _Handler(BaseHTTPRequestHandler):
         if not security.is_allowed_media(raw_name, ctype):
             self._reject_upload(HTTPStatus.BAD_REQUEST, b"disallowed file type")
             return
-        length = int(self.headers.get("Content-Length", "0"))
+        length = self._content_length()
+        if length <= 0:
+            self._reject_upload(HTTPStatus.BAD_REQUEST, b"empty or invalid length")
+            return
         if session.total_bytes + length > self.app.max_session_bytes:
             self._reject_upload(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, b"session limit reached")
             return
@@ -182,6 +193,10 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             self._reject_upload(HTTPStatus.INSUFFICIENT_STORAGE, b"write failed")
             return
-        session.record_received(saved.name, saved.stat().st_size)
+        try:
+            size = saved.stat().st_size
+        except OSError:
+            size = length
+        session.record_received(saved.name, size)
         self._send(HTTPStatus.OK, json.dumps({"saved": saved.name}).encode(),
                    "application/json")
