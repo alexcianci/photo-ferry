@@ -1,50 +1,79 @@
-# iPhone Photo Drop
+# Photo Drop
 
-A local, on-demand HTTPS receiver that lets your iPhone send photos and videos to this
-Windows PC's `Pictures\iPhone Drop\` folder over your home Wi-Fi. No cloud, no account,
-no internet exposure. This is **not** AirDrop (AWDL is unavailable on Windows); it is a
-self-hosted local web receiver.
+Send photos and videos from your iPhone to a Windows PC over your own Wi-Fi. No cloud, no
+account, nothing leaves your local network. You launch it from an icon, scan a QR code with
+your iPhone, and the files save straight to your Pictures folder at full quality.
+
+This is **not** AirDrop. AirDrop rides on Apple's proprietary AWDL protocol, which has no
+supported implementation on Windows. Photo Drop instead runs a tiny HTTPS receiver on your
+PC that your iPhone uploads to through Safari. Same result, fully local.
+
+## Why it's safe
+
+- **Nothing listens until you open it.** No background service, no always-on port.
+- **Local only.** The receiver binds to your LAN address and the Windows Firewall rule is
+  scoped to your local subnet on the Private profile. It is unreachable from the internet.
+- **Two-factor, per session.** A 128-bit token in the QR code plus a 6-digit code shown on
+  your PC. Five wrong codes shuts it down.
+- **Encrypted in transit** over HTTPS, so no one else on your Wi-Fi can read the photos.
+- **Strict about files.** Photos and videos only, filenames sanitized, size-capped, written
+  atomically, never executed.
+- **Zero outbound.** The running app never phones home.
+
+## Requirements
+
+- Windows 10 or 11
+- Python 3.12+ (3.14 recommended)
+- Git for Windows (setup uses its bundled `openssl`)
+- An iPhone on the same Wi-Fi network
 
 ## Install (once)
 
 ```powershell
-cd iphone-photo-drop
+git clone <this-repo-url> photo-drop
+cd photo-drop
 powershell -ExecutionPolicy Bypass -File .\setup\setup.ps1
 ```
 
-This creates a virtual environment, installs the app, generates a self-signed TLS
-certificate, adds a scoped Windows Firewall rule (one UAC prompt: Private profile,
-LocalSubnet only, port 8443), and places a **Receive from iPhone** shortcut in your
-Pictures folder.
+Setup creates a virtual environment, installs the app, generates a local certificate
+authority and server certificate, adds a scoped Windows Firewall rule (one UAC prompt:
+Private profile, LocalSubnet only, port 8443), and puts an **Import from iPhone** shortcut
+in your Pictures folder.
 
 ## Use
 
-1. Double-click **Receive from iPhone** in your Pictures folder.
-2. Scan the QR code with the iPhone Camera app; open the link in Safari.
-3. Tap through the one-time "Not Private" warning (self-signed certificate).
-4. Enter the 6-digit PIN shown on the PC.
-5. Choose photos/videos and upload. They land in `Pictures\iPhone Drop\`.
-6. Click **Stop** (or wait for the 10-minute idle timeout). The port closes.
+1. Double-click **Import from iPhone** in your Pictures folder.
+2. Scan the QR code with the iPhone Camera app and open the link in Safari.
+3. Enter the 6-digit code shown on your PC.
+4. Tap **Select photos or videos**, choose your files, tap **Publish**. Each gets a green
+   check as it arrives in `Pictures\iPhone Drop\`.
+5. Click **Stop** (or let the 10-minute idle timeout close it).
 
-## Security
+### Stop the certificate warning (optional, once per phone)
 
-- Nothing listens on the network unless the window is open.
-- Bound to your LAN IP only; firewall scoped to LocalSubnet + Private profile.
-- The app also rejects any client outside your subnet.
-- HTTPS end to end; two-factor local auth (128-bit QR token + 6-digit PIN);
-  lockout after 5 wrong PINs.
-- Photo/video allowlist, filename sanitization, per-file (2 GB) and per-session (20 GB)
-  size caps, atomic writes. Files are never executed.
-- The running app makes zero outbound connections.
+Because the certificate is generated locally rather than by a public authority, Safari shows
+a one-time "not private" warning. To remove it for good:
 
-## Certificate fallback (if openssl is unavailable)
+1. On the phone page, tap **Trust this PC once**. Safari downloads a profile.
+2. Install it: Settings, then the downloaded profile, then Install.
+3. Enable trust: Settings > General > About > Certificate Trust Settings, and turn on the
+   "Photo Drop Local CA" toggle.
 
-Setup uses `openssl` (bundled with Git for Windows). If it is missing, generate the cert
-manually with PowerShell and export it to `%LOCALAPPDATA%\iPhonePhotoDrop\cert.pem` /
-`key.pem`, then re-run setup. See `New-SelfSignedCertificate` docs.
+After that the warning never returns, even when the session code or your PC's IP changes, and
+only that one phone trusts only your PC's own local certificate authority.
+
+## Photo quality
+
+Files are saved exactly as your iPhone sends them: full resolution, no re-encoding or
+compression on the PC side. Note that when picking from your Photo Library, iOS itself may
+convert HEIC to full-resolution JPEG during a web upload; that is iOS behavior, not this tool.
 
 ## Development
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). Third-party credits in [NOTICE](NOTICE).
