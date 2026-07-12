@@ -65,6 +65,9 @@ def firewall_rule_present(rule_name: str = "iPhone Photo Drop") -> bool:
              f"if (Get-NetFirewallRule -DisplayName '{rule_name}' "
              f"-ErrorAction SilentlyContinue) {{ 'yes' }} else {{ 'no' }}"],
             capture_output=True, text=True, timeout=15,
+            # Suppress the console window that would otherwise flash when this is
+            # spawned from the windowless pythonw.exe GUI process (Windows only).
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.SubprocessError):
         return True

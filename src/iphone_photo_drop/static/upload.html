@@ -3,97 +3,290 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>iPhone Photo Drop</title>
+<meta name="color-scheme" content="light dark" />
+<title>Photo Drop</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 24px;
-         max-width: 560px; margin-inline: auto; }
-  h1 { font-size: 20px; }
-  .card { border: 1px solid #8884; border-radius: 12px; padding: 16px; margin-block: 16px; }
-  input[type=tel] { font-size: 28px; letter-spacing: 8px; width: 100%; text-align: center;
-                    padding: 12px; box-sizing: border-box; }
-  button { font-size: 17px; padding: 14px 18px; width: 100%; border-radius: 10px;
-           border: 0; background: #0a84ff; color: #fff; margin-top: 12px; }
-  button:disabled { opacity: .5; }
-  #files { display: none; }
-  ul { padding-left: 18px; }
-  .err { color: #d00; }
-  .ok { color: #2a2; }
+  :root {
+    color-scheme: light dark;
+    /* Dark-first tokens (OKLCH, tinted toward the green accent hue ~155) */
+    --bg: oklch(0.17 0.012 155);
+    --surface: oklch(0.215 0.014 155);
+    --surface-2: oklch(0.255 0.015 155);
+    --text: oklch(0.96 0.006 155);
+    --muted: oklch(0.70 0.012 155);
+    --hairline: oklch(0.32 0.012 155);
+    --accent: oklch(0.80 0.15 155);
+    --accent-press: oklch(0.72 0.15 155);
+    --on-accent: oklch(0.20 0.03 155);
+    --danger: oklch(0.68 0.17 25);
+    --radius: 16px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: oklch(0.975 0.006 155);
+      --surface: oklch(0.995 0.004 155);
+      --surface-2: oklch(0.95 0.008 155);
+      --text: oklch(0.24 0.014 155);
+      --muted: oklch(0.50 0.014 155);
+      --hairline: oklch(0.90 0.01 155);
+      --accent: oklch(0.60 0.15 155);
+      --accent-press: oklch(0.54 0.15 155);
+      --on-accent: oklch(0.99 0.006 155);
+      --danger: oklch(0.55 0.19 25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    padding: max(20px, env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+    max-width: 540px;
+    margin-inline: auto;
+    min-height: 100dvh;
+  }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em;
+    color: var(--muted);
+    padding: 5px 10px; border: 1px solid var(--hairline); border-radius: 999px;
+  }
+  .chip svg { width: 13px; height: 13px; }
+
+  header { margin: 22px 0 26px; }
+  h1 { font-size: 30px; line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; margin: 14px 0 6px; }
+  .sub { color: var(--muted); font-size: 16px; line-height: 1.4; margin: 0; }
+
+  label.field { display: block; font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+
+  input[type=tel] {
+    width: 100%; text-align: center;
+    font: 700 34px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 14px; text-indent: 14px;
+    padding: 18px 12px;
+    color: var(--text);
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius);
+    outline: none; transition: border-color 0.15s var(--ease);
+  }
+  input[type=tel]:focus { border-color: var(--accent); }
+
+  button {
+    font-family: inherit; font-size: 17px; font-weight: 650;
+    width: 100%; padding: 16px 18px; border: 0; border-radius: var(--radius);
+    background: var(--accent); color: var(--on-accent);
+    cursor: pointer; margin-top: 14px;
+    transition: transform 0.12s var(--ease), background 0.15s var(--ease), opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active:not(:disabled) { transform: scale(0.985); background: var(--accent-press); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--hairline); }
+
+  .msg { min-height: 20px; font-size: 14.5px; margin: 12px 2px 0; }
+  .msg.err { color: var(--danger); }
+
+  /* File list */
+  .count { font-size: 13.5px; font-weight: 600; color: var(--muted); margin: 26px 2px 10px; }
+  ul#list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  li.row {
+    display: flex; align-items: center; gap: 13px;
+    padding: 11px 4px; border-bottom: 1px solid var(--hairline);
+    animation: rise 0.4s var(--ease) both;
+  }
+  li.row:last-child { border-bottom: 0; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .thumb {
+    width: 46px; height: 46px; flex: none; border-radius: 11px; overflow: hidden;
+    background: var(--surface-2); display: grid; place-items: center; color: var(--muted);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb svg { width: 22px; height: 22px; }
+
+  .meta { min-width: 0; flex: 1; }
+  .name { font-size: 15px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .size { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .status { flex: none; width: 26px; height: 26px; display: grid; place-items: center; }
+  .status svg { width: 26px; height: 26px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--hairline); }
+  .spinner { width: 20px; height: 20px; border: 2.5px solid var(--hairline); border-top-color: var(--accent);
+             border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .check { color: var(--accent); animation: pop 0.35s var(--ease) both; }
+  .xmark { color: var(--danger); }
+  @keyframes pop { 0% { transform: scale(0.3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+  .hidden { display: none !important; }
+  footer { margin-top: 30px; text-align: center; color: var(--muted); font-size: 12.5px; }
 </style>
 </head>
 <body>
-  <h1>Send photos to your PC</h1>
+  <span class="chip">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+    Local &amp; encrypted
+  </span>
 
-  <div class="card" id="pin-card">
-    <p>Enter the 6-digit PIN shown on your PC.</p>
-    <input id="pin" type="tel" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
-           placeholder="000000" />
+  <!-- PIN gate -->
+  <section id="pin-screen">
+    <header>
+      <h1>Unlock your PC</h1>
+      <p class="sub">Enter the 6-digit code shown on your computer to pair this phone.</p>
+    </header>
+    <label class="field" for="pin">Pairing code</label>
+    <input id="pin" type="tel" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="••••••" />
     <button id="unlock">Unlock</button>
-    <p id="pin-msg" class="err"></p>
-  </div>
+    <p id="pin-msg" class="msg err"></p>
+  </section>
 
-  <div class="card" id="upload-card" hidden>
-    <input id="files" type="file" accept="image/*,video/*" multiple />
-    <button id="pick">Choose photos &amp; videos</button>
-    <button id="send" disabled>Upload</button>
-    <p id="up-msg"></p>
-    <ul id="done"></ul>
-  </div>
+  <!-- Upload -->
+  <section id="upload-screen" class="hidden">
+    <header>
+      <h1>Send your photos</h1>
+      <p class="sub">Pick the photos and videos you want on your PC. They save straight to your Pictures folder at full quality.</p>
+    </header>
+
+    <input id="files" type="file" accept="image/*,video/*" multiple class="hidden" />
+    <button id="pick">Select photos or videos</button>
+
+    <p id="count" class="count hidden"></p>
+    <ul id="list"></ul>
+
+    <button id="publish" class="hidden">Publish</button>
+    <button id="more" class="ghost hidden">Select more</button>
+  </section>
+
+  <footer>Nothing leaves your Wi-Fi network.</footer>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let chosen = [];
+const items = [];  // { file, id, li, statusEl, url }
 
+function humanSize(n) {
+  if (n < 1024) return n + " B";
+  const u = ["KB", "MB", "GB", "TB"];
+  let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return (n < 10 ? n.toFixed(1) : Math.round(n)) + " " + u[i];
+}
+
+const ICON = {
+  video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="3"/></svg>',
+  spinner: '<span class="spinner"></span>',
+  dot: '<span class="dot"></span>',
+  check: '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" opacity="0.25"/><path d="m7.5 12.5 3 3 6-6.5"/></svg>',
+  xmark: '<svg class="xmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" opacity="0.25"/><path d="m9 9 6 6m0-6-6 6"/></svg>',
+};
+
+// --- PIN gate ---
 $("unlock").onclick = async () => {
   const pin = $("pin").value.trim();
   $("pin-msg").textContent = "";
-  const r = await fetch("/auth", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pin }),
-  });
-  if (r.ok) {
-    $("pin-card").hidden = true;
-    $("upload-card").hidden = false;
-  } else if (r.status === 423) {
-    $("pin-msg").textContent = "Too many wrong attempts. The receiver has shut down.";
-  } else if (r.status === 403) {
-    $("pin-msg").textContent = "Session expired. Rescan the QR code on your PC.";
-  } else {
-    $("pin-msg").textContent = "Wrong PIN. Try again.";
+  $("unlock").disabled = true;
+  try {
+    const r = await fetch("/auth", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    if (r.ok) {
+      $("pin-screen").classList.add("hidden");
+      $("upload-screen").classList.remove("hidden");
+      return;
+    }
+    if (r.status === 423) $("pin-msg").textContent = "Too many tries. The receiver shut down; restart it on your PC.";
+    else if (r.status === 403) $("pin-msg").textContent = "Session expired. Rescan the QR code on your PC.";
+    else $("pin-msg").textContent = "That code didn't match. Try again.";
+  } catch {
+    $("pin-msg").textContent = "Couldn't reach your PC. Check you're on the same Wi-Fi.";
+  } finally {
+    $("unlock").disabled = false;
   }
 };
+$("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") $("unlock").click(); });
 
+// --- Selection ---
 $("pick").onclick = () => $("files").click();
+$("more").onclick = () => $("files").click();
+
 $("files").onchange = () => {
-  chosen = Array.from($("files").files);
-  $("up-msg").textContent = chosen.length + " selected";
-  $("send").disabled = chosen.length === 0;
+  for (const file of $("files").files) addItem(file);
+  $("files").value = "";
+  render();
 };
 
-$("send").onclick = async () => {
-  $("send").disabled = true;
-  for (const file of chosen) {
-    $("up-msg").textContent = "Uploading " + file.name + " ...";
+function addItem(file) {
+  const id = items.length;
+  const li = document.createElement("li");
+  li.className = "row";
+
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  if (file.type.startsWith("image/")) {
+    const url = URL.createObjectURL(file);
+    thumb.innerHTML = `<img src="${url}" alt="">`;
+    var revoke = url;
+  } else {
+    thumb.innerHTML = ICON.video;
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.innerHTML = `<div class="name"></div><div class="size">${humanSize(file.size)}</div>`;
+  meta.querySelector(".name").textContent = file.name;
+
+  const status = document.createElement("div");
+  status.className = "status";
+  status.innerHTML = ICON.dot;
+
+  li.append(thumb, meta, status);
+  $("list").appendChild(li);
+  items.push({ file, id, li, statusEl: status, url: revoke, done: false });
+}
+
+function render() {
+  const n = items.length;
+  const pending = items.filter((i) => !i.done).length;
+  $("count").classList.toggle("hidden", n === 0);
+  $("count").textContent = n === 1 ? "1 item" : `${n} items`;
+  $("pick").classList.toggle("hidden", n > 0);
+  $("more").classList.toggle("hidden", n === 0);
+  $("publish").classList.toggle("hidden", pending === 0);
+  $("publish").textContent = pending > 1 ? `Publish ${pending} items` : "Publish";
+}
+
+// --- Publish ---
+$("publish").onclick = async () => {
+  $("publish").disabled = true;
+  $("more").disabled = true;
+  for (const it of items) {
+    if (it.done) continue;
+    it.statusEl.innerHTML = ICON.spinner;
     try {
       const r = await fetch("/upload", {
         method: "POST",
-        headers: { "X-Filename": encodeURIComponent(file.name),
-                   "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { "X-Filename": encodeURIComponent(it.file.name),
+                   "Content-Type": it.file.type || "application/octet-stream" },
+        body: it.file,
       });
-      const li = document.createElement("li");
-      if (r.ok) { li.className = "ok"; li.textContent = "Saved " + file.name; }
-      else { const t = await r.text(); li.className = "err";
-             li.textContent = "Rejected " + file.name + " (" + t + ")"; }
-      $("done").appendChild(li);
-    } catch (e) {
-      const li = document.createElement("li");
-      li.className = "err"; li.textContent = "Failed " + file.name;
-      $("done").appendChild(li);
+      if (r.ok) {
+        it.statusEl.innerHTML = ICON.check;
+        it.done = true;
+        if (it.url) { URL.revokeObjectURL(it.url); it.url = null; }
+      } else {
+        it.statusEl.innerHTML = ICON.xmark;
+      }
+    } catch {
+      it.statusEl.innerHTML = ICON.xmark;
     }
   }
-  $("up-msg").textContent = "Done.";
-  $("send").disabled = false;
+  $("publish").disabled = false;
+  $("more").disabled = false;
+  render();
 };
 </script>
 </body>

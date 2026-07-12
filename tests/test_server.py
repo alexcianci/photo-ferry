@@ -6,7 +6,7 @@ def _get_token_cookie(session, conn):
     resp = conn.getresponse()
     body = resp.read()
     assert resp.status == 200
-    assert b"Enter the 6-digit PIN" in body
+    assert b"Unlock your PC" in body
     setc = resp.getheader("Set-Cookie")
     assert setc and "t=" in setc
     return setc.split(";")[0]  # "t=<token>"
