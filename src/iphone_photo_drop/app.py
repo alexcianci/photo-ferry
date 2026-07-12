@@ -40,11 +40,9 @@ def main() -> None:
         _fatal(f"Port {cfg.port} is already in use. Is the receiver already running?")
         return
 
-    if not net.firewall_rule_present():
-        _fatal("Firewall rule missing. Run setup\\setup.ps1 again so your iPhone can "
-               "connect (a UAC prompt will appear).")
-        return
-
+    # The firewall rule is checked off the UI thread (ui.ReceiverWindow) so the window
+    # paints instantly; a missing rule surfaces as a non-fatal warning rather than
+    # blocking startup.
     session = Session.new(
         max_pin_attempts=cfg.max_pin_attempts,
         idle_timeout_sec=cfg.idle_timeout_sec,
