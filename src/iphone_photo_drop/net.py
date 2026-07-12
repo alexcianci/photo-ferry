@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import subprocess
 
@@ -59,12 +60,16 @@ def firewall_rule_present(rule_name: str = "iPhone Photo Drop") -> bool:
     block a working setup on an inconclusive probe); returns False only when
     PowerShell definitively reports the rule absent. Requires no administrator rights.
     """
+    # Pass the rule name through the environment, never interpolated into the script
+    # text, so it can never be parsed as PowerShell even if a future caller passes
+    # attacker-influenced input.
+    env = {**os.environ, "PD_RULE_NAME": rule_name}
     try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-             f"if (Get-NetFirewallRule -DisplayName '{rule_name}' "
-             f"-ErrorAction SilentlyContinue) {{ 'yes' }} else {{ 'no' }}"],
-            capture_output=True, text=True, timeout=15,
+             "if (Get-NetFirewallRule -DisplayName $env:PD_RULE_NAME "
+             "-ErrorAction SilentlyContinue) { 'yes' } else { 'no' }"],
+            capture_output=True, text=True, timeout=15, env=env,
             # Suppress the console window that would otherwise flash when this is
             # spawned from the windowless pythonw.exe GUI process (Windows only).
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),

@@ -102,6 +102,11 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    # CONTRIBUTOR NOTE: the subnet check below is automatic for every route, but token
+    # auth is NOT. Any new route that returns private data or performs an action MUST
+    # verify the session token (see do_POST handlers). "/ca.crt" is intentionally
+    # unauthenticated because it serves only the public CA cert; do not copy that
+    # pattern to anything sensitive.
     def do_GET(self):
         if not self._client_allowed():
             self._send(HTTPStatus.FORBIDDEN, b"off-subnet")
