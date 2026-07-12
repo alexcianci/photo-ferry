@@ -41,14 +41,19 @@ if (-not $existing) {
 
 # 4) Shortcut in the Pictures folder
 $pictures = Join-Path $env:USERPROFILE "Pictures"
-$lnkPath  = Join-Path $pictures "Receive from iPhone.lnk"
+# Remove the old-named shortcut if present, then create the current one.
+$oldLnk = Join-Path $pictures "Receive from iPhone.lnk"
+if (Test-Path $oldLnk) { Remove-Item $oldLnk -Force }
+$lnkPath  = Join-Path $pictures "Import from iPhone.lnk"
+$iconPath = Join-Path $repo "assets\app.ico"
 $wsh = New-Object -ComObject WScript.Shell
 $lnk = $wsh.CreateShortcut($lnkPath)
 $lnk.TargetPath = $venvPyw
 $lnk.Arguments  = "-m iphone_photo_drop.app"
 $lnk.WorkingDirectory = $repo
-$lnk.IconLocation = "$env:SystemRoot\System32\imageres.dll,109"
-$lnk.Description = "Receive photos and videos from your iPhone (local only)"
+if (Test-Path $iconPath) { $lnk.IconLocation = "$iconPath,0" }
+else { $lnk.IconLocation = "$env:SystemRoot\System32\imageres.dll,109" }
+$lnk.Description = "Import photos and videos from your iPhone (local only)"
 $lnk.Save()
 
 Write-Host "Done. Double-click 'Import from iPhone' in your Pictures folder." -ForegroundColor Green
