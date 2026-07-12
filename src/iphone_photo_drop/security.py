@@ -20,13 +20,19 @@ def generate_pin() -> str:
 def verify_token(expected: str, provided: str | None) -> bool:
     if not provided:
         return False
-    return hmac.compare_digest(expected, provided)
+    try:
+        return hmac.compare_digest(expected, provided)
+    except TypeError:
+        return False
 
 
 def verify_pin(expected: str, provided: str | None) -> bool:
     if not provided:
         return False
-    return hmac.compare_digest(expected, provided)
+    try:
+        return hmac.compare_digest(expected, provided)
+    except TypeError:
+        return False
 
 
 ALLOWED_EXTENSIONS = frozenset(
@@ -42,6 +48,13 @@ ALLOWED_CONTENT_TYPES = frozenset(
 _LENIENT_CONTENT_TYPES = frozenset({"", "application/octet-stream"})
 _MAX_NAME_LEN = 200
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+_BIDI_ZERO_WIDTH = re.compile(r"[​-‏‪-‮⁠-⁤﻿]")
+_INVALID_CHARS = set('<>:"|?*')  # Windows-illegal (path separators already stripped)
+_RESERVED_STEMS = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 
 def _extension(name: str) -> str:
@@ -49,13 +62,24 @@ def _extension(name: str) -> str:
 
 
 def sanitize_filename(raw: str) -> str:
-    """Return a safe base filename, or raise ValueError if none can be derived."""
+    """Return a safe base filename, or raise ValueError if none can be derived.
+
+    Rejects (does not silently rewrite) Windows-illegal characters and reserved
+    device names so a malicious name fails fast instead of creating an NTFS
+    alternate data stream or a device file.
+    """
     # Take the final path component regardless of / or \ separators.
     base = re.split(r"[\\/]", raw)[-1]
     base = _CONTROL_CHARS.sub("", base)
+    base = _BIDI_ZERO_WIDTH.sub("", base)
     base = base.strip().lstrip(".").strip()
+    base = base.rstrip(". ")  # Windows ignores trailing dots/spaces
     if not base:
         raise ValueError("filename empty after sanitization")
+    if any(ch in _INVALID_CHARS for ch in base):
+        raise ValueError("filename contains invalid characters")
+    if base.split(".", 1)[0].upper() in _RESERVED_STEMS:
+        raise ValueError("reserved device name")
 
     ext = _extension(base)
     if ext not in ALLOWED_EXTENSIONS:

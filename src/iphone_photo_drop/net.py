@@ -39,6 +39,8 @@ def client_in_subnet(client_ip: str, server_ip: str, prefix: int = 24) -> bool:
         return False
     if server.is_loopback:
         return client.is_loopback
+    if server.version != 4 or client.version != 4:
+        return False
     network = ipaddress.ip_network(f"{server_ip}/{prefix}", strict=False)
     return client in network
 

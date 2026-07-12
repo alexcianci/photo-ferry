@@ -33,3 +33,16 @@ def test_save_stream_rejects_bad_filename(tmp_path):
     with pytest.raises(ValueError):
         storage.save_stream(src, 1, tmp_path, "evil.exe", max_file_bytes=10, chunk_bytes=4)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_save_stream_no_residue_when_rename_fails(tmp_path, monkeypatch):
+    import iphone_photo_drop.storage as storage_mod
+
+    def boom(*a, **k):
+        raise OSError("rename failed")
+
+    monkeypatch.setattr(storage_mod.os, "replace", boom)
+    src = io.BytesIO(b"data")
+    with pytest.raises(OSError):
+        storage.save_stream(src, 4, tmp_path, "photo.jpg", max_file_bytes=1024, chunk_bytes=4)
+    assert list(tmp_path.iterdir()) == []

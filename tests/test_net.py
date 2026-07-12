@@ -33,3 +33,7 @@ def test_port_in_use_detects_open_socket():
         port = s.getsockname()[1]
         assert net.port_in_use("127.0.0.1", port) is True
     assert net.port_in_use("127.0.0.1", port) is False
+
+
+def test_client_in_subnet_rejects_ipv6_server():
+    assert net.client_in_subnet("192.168.1.5", "fe80::1", 24) is False

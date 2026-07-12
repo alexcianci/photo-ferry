@@ -39,8 +39,9 @@ def save_stream(
     dest_dir.mkdir(parents=True, exist_ok=True)
     tmp = dest_dir / f".{safe_name}.{secrets.token_hex(8)}.part"
 
-    written = 0
+    committed = False
     try:
+        written = 0
         with open(tmp, "wb") as f:
             remaining = content_length
             while remaining > 0:
@@ -52,10 +53,13 @@ def save_stream(
                     raise ValueError("file exceeds max size")
                 f.write(chunk)
                 remaining -= len(chunk)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-
-    final = _unique_path(dest_dir, safe_name)
-    os.replace(tmp, final)
-    return final
+        # NOTE: _unique_path + os.replace is a check-then-act; two uploads of the
+        # same name racing could clobber (data loss, not a security breach). The
+        # upload page uploads strictly sequentially, so this is an accepted low risk.
+        final = _unique_path(dest_dir, safe_name)
+        os.replace(tmp, final)
+        committed = True
+        return final
+    finally:
+        if not committed:
+            tmp.unlink(missing_ok=True)

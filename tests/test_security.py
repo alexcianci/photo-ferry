@@ -72,3 +72,32 @@ def test_is_allowed_media_by_extension():
 def test_is_allowed_media_rejects_bad_type_or_ext():
     assert security.is_allowed_media("photo.jpg", "text/html") is False
     assert security.is_allowed_media("payload.exe", "") is False
+
+
+def test_sanitize_rejects_windows_invalid_chars():
+    for bad in ("image.jpg:x.jpg", 'a"b.jpg', "a|b.png", "a?b.mov", "a*b.mp4", "a<b.gif"):
+        with pytest.raises(ValueError):
+            security.sanitize_filename(bad)
+
+
+def test_sanitize_rejects_reserved_device_names():
+    for bad in ("CON.jpg", "nul.png", "COM1.mov", "LPT1.jpg", "CON.foo.jpg"):
+        with pytest.raises(ValueError):
+            security.sanitize_filename(bad)
+
+
+def test_sanitize_strips_bidi_and_zero_width():
+    assert security.sanitize_filename("photo‮.jpg") == "photo.jpg"
+    assert security.sanitize_filename("a​b.png") == "ab.png"
+
+
+def test_sanitize_strips_trailing_dot_space():
+    assert security.sanitize_filename("photo.jpg. ") == "photo.jpg"
+
+
+def test_verify_token_handles_non_ascii():
+    assert security.verify_token("abcdef", "abcdéf") is False
+
+
+def test_verify_pin_handles_non_ascii():
+    assert security.verify_pin("012345", "0123é4") is False
