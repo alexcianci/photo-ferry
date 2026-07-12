@@ -13,15 +13,16 @@ from tkinter import font as tkfont
 from . import net, qr
 from .server import ReceiverServer
 
-# Palette (approximating the OKLCH tokens used on the phone page).
-BG = "#161d18"
-SURFACE = "#1f2723"
-TEXT = "#eef2ef"
-MUTED = "#9aa8a0"
-HAIRLINE = "#333d37"
-ACCENT = "#5fd39a"
-ON_ACCENT = "#0f1a14"
-DANGER = "#e0796b"
+# Palette: exact sRGB conversions of the phone page's OKLCH tokens, so the desktop
+# window and the mobile page render the same colors.
+BG = "#0b110d"
+SURFACE = "#141b17"
+TEXT = "#eff3f0"
+MUTED = "#99a19b"
+HAIRLINE = "#2e3530"
+ACCENT = "#61da92"
+ON_ACCENT = "#0a1a10"
+DANGER = "#ef6661"
 
 
 def human_size(n: int) -> str:

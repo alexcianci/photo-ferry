@@ -6,6 +6,5 @@ This product includes the following third-party materials:
 - segno (https://github.com/heuer/segno) - QR code generation.
   Licensed under the BSD 3-Clause License.
 
-- Application icon: "Computer icons" created by Maxim Basinski Premium - Flaticon
-  (https://www.flaticon.com/free-icons/computer). Used under the Flaticon Free
-  License with attribution.
+The application icon (assets/app.ico, assets/icon.png) is an original work created
+for this project and is covered by the project's MIT license.
