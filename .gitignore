@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+# never commit TLS keys/certs or app state
+*.pem
+*.key
+*.crt
+.state/
