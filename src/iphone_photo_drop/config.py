@@ -1,0 +1,38 @@
+"""Runtime configuration with safe defaults."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import paths
+
+GIB = 1024**3
+
+
+@dataclass(frozen=True)
+class Config:
+    port: int
+    idle_timeout_sec: int
+    max_pin_attempts: int
+    max_file_bytes: int
+    max_session_bytes: int
+    chunk_bytes: int
+    subnet_prefix: int
+    destination_dir: Path
+    cert_path: Path
+    key_path: Path
+
+
+def default_config() -> Config:
+    return Config(
+        port=8443,
+        idle_timeout_sec=600,
+        max_pin_attempts=5,
+        max_file_bytes=2 * GIB,
+        max_session_bytes=20 * GIB,
+        chunk_bytes=64 * 1024,
+        subnet_prefix=24,
+        destination_dir=paths.destination_dir(),
+        cert_path=paths.cert_path(),
+        key_path=paths.key_path(),
+    )
