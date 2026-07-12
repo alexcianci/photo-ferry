@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iphone-photo-drop"
+version = "0.1.0"
+description = "Local on-demand HTTPS receiver for iPhone photo/video transfer on Windows."
+requires-python = ">=3.12"
+dependencies = ["segno==1.6.1"]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+iphone_photo_drop = ["static/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
