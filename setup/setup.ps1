@@ -16,16 +16,14 @@ if (-not (Test-Path $venvPy)) {
 & $venvPy -m pip install --upgrade pip | Out-Null
 & $venvPy -m pip install -e $repo | Out-Null
 
-# 2) TLS cert (via the package's tls module -> openssl)
+# 2) Local CA + leaf certificate (via the package's tls module -> openssl)
 $appData = Join-Path $env:LOCALAPPDATA "iPhonePhotoDrop"
 New-Item -ItemType Directory -Force -Path $appData | Out-Null
-$cert = Join-Path $appData "cert.pem"
-$key  = Join-Path $appData "key.pem"
-if (-not (Test-Path $cert)) {
-    Write-Host "Generating self-signed certificate..."
-    & $venvPy -c "from iphone_photo_drop import net, tls; import pathlib; tls.generate_self_signed(net.detect_lan_ip(), pathlib.Path(r'$cert'), pathlib.Path(r'$key'))"
-    # Restrict the private key to the current user only (600-equivalent).
-    icacls $key /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+Write-Host "Preparing local certificate authority + server certificate..."
+& $venvPy -c "from iphone_photo_drop import net, tls, paths; tls.setup(net.detect_lan_ip(), paths.ca_cert_path(), paths.ca_key_path(), paths.cert_path(), paths.key_path(), paths.cert_ip_marker())"
+# Restrict private keys to the current user only (600-equivalent).
+foreach ($k in @((Join-Path $appData "ca-key.pem"), (Join-Path $appData "key.pem"))) {
+    if (Test-Path $k) { icacls $k /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null }
 }
 
 # 3) Firewall rule (scoped, Private + LocalSubnet). Needs admin: self-elevate this step.
@@ -53,4 +51,8 @@ $lnk.IconLocation = "$env:SystemRoot\System32\imageres.dll,109"
 $lnk.Description = "Receive photos and videos from your iPhone (local only)"
 $lnk.Save()
 
-Write-Host "Done. Double-click 'Receive from iPhone' in your Pictures folder." -ForegroundColor Green
+Write-Host "Done. Double-click 'Import from iPhone' in your Pictures folder." -ForegroundColor Green
+Write-Host ""
+Write-Host "Optional, one time per phone: to stop Safari's security warning, open the" -ForegroundColor Yellow
+Write-Host "receiver, tap 'Trust this PC once' on the phone page, install the profile, then" -ForegroundColor Yellow
+Write-Host "enable it under Settings > General > About > Certificate Trust Settings." -ForegroundColor Yellow

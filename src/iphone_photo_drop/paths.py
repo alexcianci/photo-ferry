@@ -32,3 +32,15 @@ def cert_path() -> Path:
 
 def key_path() -> Path:
     return app_data_dir() / "key.pem"
+
+
+def ca_cert_path() -> Path:
+    return app_data_dir() / "ca.pem"
+
+
+def ca_key_path() -> Path:
+    return app_data_dir() / "ca-key.pem"
+
+
+def cert_ip_marker() -> Path:
+    return app_data_dir() / "cert-ip.txt"

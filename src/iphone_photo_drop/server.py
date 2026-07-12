@@ -34,6 +34,7 @@ class ReceiverServer(ThreadingHTTPServer):
         max_session_bytes: int,
         chunk_bytes: int,
         subnet_prefix: int,
+        ca_cert_path: Path | None = None,
         on_shutdown: Callable[[], None] | None = None,
     ) -> None:
         super().__init__((host, port), _Handler)
@@ -44,6 +45,7 @@ class ReceiverServer(ThreadingHTTPServer):
         self.chunk_bytes = chunk_bytes
         self.subnet_prefix = subnet_prefix
         self.server_ip = host
+        self.ca_cert_path = ca_cert_path
         self.on_shutdown = on_shutdown
 
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -105,6 +107,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.FORBIDDEN, b"off-subnet")
             return
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/ca.crt":
+            self._serve_ca()
+            return
         if parsed.path != "/":
             self._send(HTTPStatus.NOT_FOUND, b"not found")
             return
@@ -118,6 +123,17 @@ class _Handler(BaseHTTPRequestHandler):
         self.app.session.touch()
         self._send(HTTPStatus.OK, _UPLOAD_HTML, "text/html; charset=utf-8",
                    {"Set-Cookie": cookie})
+
+    def _serve_ca(self):
+        # The CA *public* certificate (no private key). Unauthenticated on purpose:
+        # a phone needs it to establish trust before the token flow. Subnet-checked
+        # like every request. The MIME type makes iOS offer to install it.
+        ca = self.app.ca_cert_path
+        if ca is None or not ca.exists():
+            self._send(HTTPStatus.NOT_FOUND, b"no CA")
+            return
+        self._send(HTTPStatus.OK, ca.read_bytes(), "application/x-x509-ca-cert",
+                   {"Content-Disposition": 'attachment; filename="PhotoDropCA.crt"'})
 
     def do_POST(self):
         if not self._client_allowed():

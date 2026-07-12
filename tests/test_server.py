@@ -145,3 +145,50 @@ def test_lockout_triggers_on_shutdown_callback(cert_pair, tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_ca_endpoint_404_without_ca(running_server):
+    session, connect = running_server
+    conn = connect()
+    conn.request("GET", "/ca.crt")
+    assert conn.getresponse().status == 404
+
+
+def test_leaf_trusted_by_client_with_ca_and_serves_ca(cert_pair, tmp_path):
+    # cert_pair param gives us the skip-if-no-openssl behavior; we build our own CA.
+    import http.client
+    import ssl
+    import threading
+
+    from iphone_photo_drop import tls
+    from iphone_photo_drop.server import ReceiverServer
+    from iphone_photo_drop.session import Session
+
+    ca_cert = tmp_path / "ca.pem"
+    ca_key = tmp_path / "ca-key.pem"
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    tls.generate_ca(ca_cert, ca_key)
+    tls.generate_leaf("127.0.0.1", ca_cert, ca_key, cert, key)
+
+    session = Session.new(max_pin_attempts=3, idle_timeout_sec=600)
+    server = ReceiverServer(
+        host="127.0.0.1", port=0, session=session, destination_dir=tmp_path / "inbox",
+        cert_path=cert, key_path=key, max_file_bytes=1024, max_session_bytes=1_000_000,
+        chunk_bytes=64, subnet_prefix=24, ca_cert_path=ca_cert,
+    )
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    try:
+        port = server.server_address[1]
+        # A client that TRUSTS the CA verifies the leaf (chain + IP SAN) with no warning,
+        # exactly like Safari once the CA profile is installed on the phone.
+        ctx = ssl.create_default_context(cafile=str(ca_cert))
+        conn = http.client.HTTPSConnection("127.0.0.1", port, context=ctx)
+        conn.request("GET", "/ca.crt")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert b"BEGIN CERTIFICATE" in resp.read()
+    finally:
+        server.shutdown()
+        server.server_close()

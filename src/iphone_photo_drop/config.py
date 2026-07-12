@@ -21,6 +21,9 @@ class Config:
     destination_dir: Path
     cert_path: Path
     key_path: Path
+    ca_cert_path: Path
+    ca_key_path: Path
+    cert_ip_marker: Path
 
 
 def default_config() -> Config:
@@ -35,4 +38,7 @@ def default_config() -> Config:
         destination_dir=paths.destination_dir(),
         cert_path=paths.cert_path(),
         key_path=paths.key_path(),
+        ca_cert_path=paths.ca_cert_path(),
+        ca_key_path=paths.ca_key_path(),
+        cert_ip_marker=paths.cert_ip_marker(),
     )
