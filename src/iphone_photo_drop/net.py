@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import subprocess
 
 
 def is_private_ip(ip: str) -> bool:
@@ -49,3 +50,25 @@ def port_in_use(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.5)
         return s.connect_ex((host, port)) == 0
+
+
+def firewall_rule_present(rule_name: str = "iPhone Photo Drop") -> bool:
+    """Best-effort check that the scoped inbound firewall rule exists.
+
+    Returns True if the rule is found OR if the check cannot be performed (we never
+    block a working setup on an inconclusive probe); returns False only when
+    PowerShell definitively reports the rule absent. Requires no administrator rights.
+    """
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             f"if (Get-NetFirewallRule -DisplayName '{rule_name}' "
+             f"-ErrorAction SilentlyContinue) {{ 'yes' }} else {{ 'no' }}"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    out = result.stdout.strip().lower()
+    if out in ("yes", "no"):
+        return out == "yes"
+    return True

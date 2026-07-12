@@ -28,6 +28,7 @@ def main() -> None:
 
     if not cfg.cert_path.exists() or not cfg.key_path.exists():
         _fatal("TLS certificate missing. Run setup\\setup.ps1 first.")
+        return
 
     try:
         lan_ip = net.detect_lan_ip()
@@ -37,6 +38,11 @@ def main() -> None:
 
     if net.port_in_use(lan_ip, cfg.port):
         _fatal(f"Port {cfg.port} is already in use. Is the receiver already running?")
+        return
+
+    if not net.firewall_rule_present():
+        _fatal("Firewall rule missing. Run setup\\setup.ps1 again so your iPhone can "
+               "connect (a UAC prompt will appear).")
         return
 
     session = Session.new(
@@ -51,6 +57,8 @@ def main() -> None:
         chunk_bytes=cfg.chunk_bytes, subnet_prefix=cfg.subnet_prefix,
     )
     url = qr.receiver_url(lan_ip, cfg.port, session.token)
+    # The UI thread owns shutdown (it polls session.locked_out / is_idle); the server's
+    # on_shutdown callback is intentionally left unset here.
     ReceiverWindow(server, url, session.pin).run()
 
 

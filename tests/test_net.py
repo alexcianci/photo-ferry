@@ -1,4 +1,5 @@
 import socket
+import types
 
 from iphone_photo_drop import net
 
@@ -37,3 +38,24 @@ def test_port_in_use_detects_open_socket():
 
 def test_client_in_subnet_rejects_ipv6_server():
     assert net.client_in_subnet("192.168.1.5", "fe80::1", 24) is False
+
+
+def test_firewall_rule_present_yes(monkeypatch):
+    import types
+    monkeypatch.setattr(net.subprocess, "run",
+                        lambda *a, **k: types.SimpleNamespace(stdout="yes\n", returncode=0))
+    assert net.firewall_rule_present() is True
+
+
+def test_firewall_rule_present_no(monkeypatch):
+    import types
+    monkeypatch.setattr(net.subprocess, "run",
+                        lambda *a, **k: types.SimpleNamespace(stdout="no\n", returncode=0))
+    assert net.firewall_rule_present() is False
+
+
+def test_firewall_rule_present_unavailable_defaults_true(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no powershell")
+    monkeypatch.setattr(net.subprocess, "run", boom)
+    assert net.firewall_rule_present() is True

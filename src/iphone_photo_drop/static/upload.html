@@ -56,6 +56,8 @@ $("unlock").onclick = async () => {
     $("upload-card").hidden = false;
   } else if (r.status === 423) {
     $("pin-msg").textContent = "Too many wrong attempts. The receiver has shut down.";
+  } else if (r.status === 403) {
+    $("pin-msg").textContent = "Session expired. Rescan the QR code on your PC.";
   } else {
     $("pin-msg").textContent = "Wrong PIN. Try again.";
   }

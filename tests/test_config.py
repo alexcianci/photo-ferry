@@ -1,4 +1,3 @@
-from pathlib import Path
 from iphone_photo_drop import config, paths
 
 

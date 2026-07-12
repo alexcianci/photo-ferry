@@ -11,7 +11,7 @@ Write-Host "== iPhone Photo Drop setup ==" -ForegroundColor Cyan
 # 1) venv + install
 if (-not (Test-Path $venvPy)) {
     Write-Host "Creating virtual environment..."
-    py -3.14 -m venv (Join-Path $repo ".venv")
+    py -3 -m venv (Join-Path $repo ".venv")
 }
 & $venvPy -m pip install --upgrade pip | Out-Null
 & $venvPy -m pip install -e $repo | Out-Null
@@ -24,6 +24,8 @@ $key  = Join-Path $appData "key.pem"
 if (-not (Test-Path $cert)) {
     Write-Host "Generating self-signed certificate..."
     & $venvPy -c "from iphone_photo_drop import net, tls; import pathlib; tls.generate_self_signed(net.detect_lan_ip(), pathlib.Path(r'$cert'), pathlib.Path(r'$key'))"
+    # Restrict the private key to the current user only (600-equivalent).
+    icacls $key /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
 }
 
 # 3) Firewall rule (scoped, Private + LocalSubnet). Needs admin: self-elevate this step.
