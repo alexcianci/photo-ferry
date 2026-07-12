@@ -52,6 +52,7 @@ class ReceiverWindow:
         self.root.configure(bg=BG)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.stop)
+        self._set_window_icon()
 
         pad = 26
         wrap = tk.Frame(self.root, bg=BG)
@@ -101,6 +102,18 @@ class ReceiverWindow:
             padx=14, pady=7,
         )
         self.stop_btn.pack(pady=(14, 0), fill="x")
+
+    def _set_window_icon(self) -> None:
+        # Brand the title bar / taskbar with the app icon. Cosmetic, so never let a
+        # missing asset block launch.
+        try:
+            from importlib import resources
+            data = (resources.files("iphone_photo_drop")
+                    .joinpath("static/app-icon.png").read_bytes())
+            self._app_icon = tk.PhotoImage(data=base64.b64encode(data).decode("ascii"))
+            self.root.iconphoto(True, self._app_icon)
+        except Exception:
+            pass
 
     def run(self) -> None:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()

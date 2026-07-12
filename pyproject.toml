@@ -16,7 +16,7 @@ dev = ["pytest==8.3.4"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-iphone_photo_drop = ["static/*.html"]
+iphone_photo_drop = ["static/*.html", "static/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
