@@ -77,3 +77,8 @@ convert HEIC to full-resolution JPEG during a web upload; that is iOS behavior, 
 ## License
 
 MIT. See [LICENSE](LICENSE). Third-party credits in [NOTICE](NOTICE).
+
+## Support
+
+If Photo Drop saved you a cable hunt, there is a **Sponsor** button at the top of
+the repo. No pressure — the tool is free and always will be.
