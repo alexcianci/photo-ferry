@@ -8,6 +8,10 @@ This is **not** AirDrop. AirDrop rides on Apple's proprietary AWDL protocol, whi
 supported implementation on Windows. Photo Drop instead runs a tiny HTTPS receiver on your
 PC that your iPhone uploads to through Safari. Same result, fully local.
 
+<img width="296" height="526" alt="Desktop View" src="https://github.com/user-attachments/assets/d1179c45-7617-4abf-92b1-7e0205a591af" /> <img width="300" height="526" alt="iPhone View" src="https://github.com/user-attachments/assets/715c62f5-d2b6-446d-8ff1-5712ba8c6e52" /> <img width="302" height="526" alt="Send photos - loading" src="https://github.com/user-attachments/assets/583052fc-47ea-4d12-8442-b8959142fedf" />
+
+
+
 ## Why it's safe
 
 - **Nothing listens until you open it.** No background service, no always-on port.
