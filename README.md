@@ -74,7 +74,11 @@ convert HEIC to full-resolution JPEG during a web upload; that is iOS behavior, 
 
 ## Development
 
+`setup.ps1` installs runtime dependencies only, so a fresh clone has no test runner. Install
+the dev extra once, then run the suite:
+
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest
 ```
 
