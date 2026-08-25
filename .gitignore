@@ -9,3 +9,4 @@ dist/
 *.key
 *.crt
 .state/
+.claude/settings.local.json

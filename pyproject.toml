@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "iphone-photo-drop"
+name = "photo-ferry"
 version = "0.1.0"
 description = "Local on-demand HTTPS receiver for iPhone photo/video transfer on Windows."
 requires-python = ">=3.12"

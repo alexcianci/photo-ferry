@@ -19,6 +19,11 @@ _GIT_OPENSSL = r"C:\Program Files\Git\usr\bin\openssl.exe"
 # Suppress the console window when openssl is spawned from the windowless GUI.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+# Keeps the pre-rename wording on purpose: this is the CommonName shown in the
+# certificate that users have already installed and trusted on their phones, and it is
+# what the README tells them to look for in Settings. generate_ca never overwrites an
+# existing CA, so renaming this would only split new installs away from the documented
+# name for no gain.
 CA_COMMON_NAME = "Photo Drop Local CA"
 
 

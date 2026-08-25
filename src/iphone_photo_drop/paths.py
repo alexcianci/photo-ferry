@@ -4,6 +4,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Deliberately keeps the pre-rename name. This directory holds the local CA that
+# existing installs have already trusted on their phones; renaming it orphans that
+# trust and brings the "not private" certificate warning back for every user.
+# Do not "fix" this to match the project name.
 APP_DIR_NAME = "iPhonePhotoDrop"
 DEST_FOLDER_NAME = "iPhone Drop"
 

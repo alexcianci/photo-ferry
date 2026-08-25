@@ -34,8 +34,8 @@ PC that your iPhone uploads to through Safari. Same result, fully local.
 ## Install (once)
 
 ```powershell
-git clone https://github.com/alexcianci/iphone-photo-drop.git photo-drop
-cd photo-drop
+git clone https://github.com/alexcianci/photo-ferry.git photo-ferry
+cd photo-ferry
 powershell -ExecutionPolicy Bypass -File .\setup\setup.ps1
 ```
 

@@ -53,6 +53,9 @@ def port_in_use(host: str, port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+# The default rule name deliberately keeps the pre-rename wording: it must match the
+# DisplayName that setup.ps1 already created on existing installs. Renaming it makes
+# every existing install report a missing rule that is in fact present.
 def firewall_rule_present(rule_name: str = "iPhone Photo Drop") -> bool:
     """Best-effort check that the scoped inbound firewall rule exists.
 
