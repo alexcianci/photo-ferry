@@ -9,6 +9,15 @@ from pathlib import Path
 # trust and brings the "not private" certificate warning back for every user.
 # Do not "fix" this to match the project name.
 APP_DIR_NAME = "iPhonePhotoDrop"
+
+# Also deliberately pre-rename, for an unrelated reason. This is the Pictures subfolder
+# every photo a user has already imported now sits in; renaming it silently splits their
+# library in two, with nothing in the UI pointing at the old folder. This one fails
+# quietly where the other three protected identifiers fail loudly: an orphaned CA
+# re-triggers a certificate warning the user can re-trust, and a renamed firewall rule
+# reports missing-but-present. Here there is no symptom at all, just photos that stop
+# arriving where the user keeps them.
+# Do not "fix" this to match the project name.
 DEST_FOLDER_NAME = "iPhone Drop"
 
 

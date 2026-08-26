@@ -17,6 +17,10 @@ if (-not (Test-Path $venvPy)) {
 & $venvPy -m pip install -e $repo | Out-Null
 
 # 2) Local CA + leaf certificate (via the package's tls module -> openssl)
+# "iPhonePhotoDrop" must stay identical to paths.APP_DIR_NAME -- do not rename it. The
+# keys below are written by Python, at the Python path; rename only this copy and the
+# Test-Path guard misses them, icacls never runs, and the private keys silently keep
+# their inherited ACLs with nothing reporting an error.
 $appData = Join-Path $env:LOCALAPPDATA "iPhonePhotoDrop"
 New-Item -ItemType Directory -Force -Path $appData | Out-Null
 Write-Host "Preparing local certificate authority + server certificate..."
@@ -27,6 +31,8 @@ foreach ($k in @((Join-Path $appData "ca-key.pem"), (Join-Path $appData "key.pem
 }
 
 # 3) Firewall rule (scoped, Private + LocalSubnet). Needs admin: self-elevate this step.
+# Must stay identical to the rule_name default in photo_ferry.net -- do not rename it.
+# Existing installs already carry a rule under this exact DisplayName.
 $ruleName = "iPhone Photo Drop"
 $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
 if (-not $existing) {
@@ -41,11 +47,17 @@ if (-not $existing) {
 
 # 4) Shortcut in the Pictures folder
 $pictures = Join-Path $env:USERPROFILE "Pictures"
-# Remove shortcuts left by earlier names, then create the current one. They point at
-# a target that no longer exists, so leaving them behind strands a dead icon.
+# Remove shortcuts left by earlier names, then create the current one. Their TargetPath
+# is pythonw.exe, which still exists, so Windows resolves them fine and never shows a
+# broken-shortcut error. What no longer exists is the module named in their Arguments,
+# and pythonw has no console, so the ModuleNotFoundError goes nowhere: the user
+# double-clicks and nothing at all happens, silently. That is why this loop stays.
+# The delete is best-effort -- $ErrorActionPreference is Stop, and a locked or
+# read-only .lnk must not abort a run that has already done the venv, the certificates
+# and the UAC-prompted firewall rule.
 foreach ($old in @("Receive from iPhone.lnk", "Import from iPhone.lnk")) {
     $oldLnk = Join-Path $pictures $old
-    if (Test-Path $oldLnk) { Remove-Item $oldLnk -Force }
+    if (Test-Path $oldLnk) { Remove-Item $oldLnk -Force -ErrorAction SilentlyContinue }
 }
 $lnkPath  = Join-Path $pictures "Photo Ferry.lnk"
 $iconPath = Join-Path $repo "assets\app.ico"
