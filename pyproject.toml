@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "photo-ferry"
-version = "0.1.0"
-description = "Local on-demand HTTPS receiver for iPhone photo/video transfer on Windows."
+version = "0.2.0"
+description = "Local on-demand HTTPS service for moving photos and videos between an iPhone and a Windows PC."
 requires-python = ">=3.12"
 dependencies = ["segno==1.6.1"]
 
@@ -16,7 +16,7 @@ dev = ["pytest==9.0.3"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-iphone_photo_drop = ["static/*.html", "static/*.png"]
+photo_ferry = ["static/*.html", "static/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

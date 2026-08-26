@@ -1,12 +1,13 @@
-# Photo Drop
+# Photo Ferry
 
-Send photos and videos from your iPhone to a Windows PC over your own Wi-Fi. No cloud, no
-account, nothing leaves your local network. You launch it from an icon, scan a QR code with
-your iPhone, and the files save straight to your Pictures folder at full quality.
+Move photos and videos between your iPhone and a Windows PC over your own Wi-Fi, in both
+directions. No cloud, no account, nothing leaves your local network. You launch it from an
+icon, scan a QR code with your iPhone, and files cross at full quality: from the phone into
+your Pictures folder, or from the PC back to your camera roll.
 
 This is **not** AirDrop. AirDrop rides on Apple's proprietary AWDL protocol, which has no
-supported implementation on Windows. Photo Drop instead runs a tiny HTTPS receiver on your
-PC that your iPhone uploads to through Safari. Same result, fully local.
+supported implementation on Windows. Photo Ferry instead runs a tiny HTTPS server on your
+PC that your iPhone talks to through Safari. Same result, fully local.
 
 <img width="296" height="526" alt="PC receiver showing the scan-to-connect screen" src="docs/screenshots/desktop.png" /> <img width="300" height="526" alt="iPhone pairing screen" src="docs/screenshots/iphone-pair.png" /> <img width="302" height="526" alt="iPhone send-photos screen" src="docs/screenshots/iphone-send.jpg" />
 
@@ -41,12 +42,12 @@ powershell -ExecutionPolicy Bypass -File .\setup\setup.ps1
 
 Setup creates a virtual environment, installs the app, generates a local certificate
 authority and server certificate, adds a scoped Windows Firewall rule (one UAC prompt:
-Private profile, LocalSubnet only, port 8443), and puts an **Import from iPhone** shortcut
+Private profile, LocalSubnet only, port 8443), and puts a **Photo Ferry** shortcut
 in your Pictures folder.
 
 ## Use
 
-1. Double-click **Import from iPhone** in your Pictures folder.
+1. Double-click **Photo Ferry** in your Pictures folder.
 2. Scan the QR code with the iPhone Camera app and open the link in Safari.
 3. Enter the 6-digit code shown on your PC.
 4. Tap **Select photos or videos**, choose your files, tap **Publish**. Each gets a green
@@ -56,7 +57,12 @@ in your Pictures folder.
 ### Stop the certificate warning (optional, once per phone)
 
 Because the certificate is generated locally rather than by a public authority, Safari shows
-a one-time "not private" warning. To remove it for good:
+a one-time "not private" warning.
+
+The certificate is called **"Photo Drop Local CA"** — the project's former name. It is kept
+so that phones which already trust it keep working after the rename.
+
+To remove the warning for good:
 
 1. On the phone page, tap **Trust this PC once**. Safari downloads a profile.
 2. Install it: Settings, then the downloaded profile, then Install.
@@ -88,5 +94,5 @@ MIT. See [LICENSE](LICENSE). Third-party credits in [NOTICE](NOTICE).
 
 ## Support
 
-If Photo Drop saved you a cable hunt, there is a **Sponsor** button at the top of
+If Photo Ferry saved you a cable hunt, there is a **Sponsor** button at the top of
 the repo. No pressure — the tool is free and always will be.

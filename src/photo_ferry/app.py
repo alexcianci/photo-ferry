@@ -16,7 +16,7 @@ def _fatal(message: str) -> None:
         import tkinter as tk
         root = tk.Tk()
         root.withdraw()
-        mb.showerror("iPhone Photo Drop", message)
+        mb.showerror("Photo Ferry", message)
         root.destroy()
     except Exception:
         print(message, file=sys.stderr)

@@ -1,6 +1,6 @@
 import pytest
 
-from iphone_photo_drop import security
+from photo_ferry import security
 
 
 def test_generate_token_is_high_entropy_and_unique():

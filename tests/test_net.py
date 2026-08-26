@@ -1,7 +1,7 @@
 import socket
 import types
 
-from iphone_photo_drop import net
+from photo_ferry import net
 
 
 def test_is_private_ip():

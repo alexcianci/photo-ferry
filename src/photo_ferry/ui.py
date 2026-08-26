@@ -48,7 +48,7 @@ class ReceiverWindow:
         self._firewall_ok: bool | None = None  # set by a background probe
 
         self.root = tk.Tk()
-        self.root.title("Photo Drop")
+        self.root.title("Photo Ferry")
         self.root.configure(bg=BG)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.stop)
@@ -108,7 +108,7 @@ class ReceiverWindow:
         # missing asset block launch.
         try:
             from importlib import resources
-            data = (resources.files("iphone_photo_drop")
+            data = (resources.files("photo_ferry")
                     .joinpath("static/app-icon.png").read_bytes())
             self._app_icon = tk.PhotoImage(data=base64.b64encode(data).decode("ascii"))
             self.root.iconphoto(True, self._app_icon)

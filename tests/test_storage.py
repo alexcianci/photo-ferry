@@ -2,7 +2,7 @@ import io
 
 import pytest
 
-from iphone_photo_drop import storage
+from photo_ferry import storage
 
 
 def test_save_stream_writes_file(tmp_path):
@@ -36,7 +36,7 @@ def test_save_stream_rejects_bad_filename(tmp_path):
 
 
 def test_save_stream_no_residue_when_rename_fails(tmp_path, monkeypatch):
-    import iphone_photo_drop.storage as storage_mod
+    import photo_ferry.storage as storage_mod
 
     def boom(*a, **k):
         raise OSError("rename failed")

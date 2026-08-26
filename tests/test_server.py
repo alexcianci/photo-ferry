@@ -106,7 +106,7 @@ def test_upload_bad_content_length_is_rejected(running_server):
 
 def test_off_subnet_client_is_forbidden(running_server, monkeypatch):
     session, connect = running_server
-    import iphone_photo_drop.server as server_mod
+    import photo_ferry.server as server_mod
     monkeypatch.setattr(server_mod.net, "client_in_subnet", lambda *a, **k: False)
     conn = connect()
     conn.request("GET", f"/?t={session.token}")
@@ -118,8 +118,8 @@ def test_lockout_triggers_on_shutdown_callback(cert_pair, tmp_path):
     import ssl
     import threading
 
-    from iphone_photo_drop.server import ReceiverServer
-    from iphone_photo_drop.session import Session
+    from photo_ferry.server import ReceiverServer
+    from photo_ferry.session import Session
 
     cert, key = cert_pair
     fired = threading.Event()
@@ -160,9 +160,9 @@ def test_leaf_trusted_by_client_with_ca_and_serves_ca(cert_pair, tmp_path):
     import ssl
     import threading
 
-    from iphone_photo_drop import tls
-    from iphone_photo_drop.server import ReceiverServer
-    from iphone_photo_drop.session import Session
+    from photo_ferry import tls
+    from photo_ferry.server import ReceiverServer
+    from photo_ferry.session import Session
 
     ca_cert = tmp_path / "ca.pem"
     ca_key = tmp_path / "ca-key.pem"
@@ -192,3 +192,12 @@ def test_leaf_trusted_by_client_with_ca_and_serves_ca(cert_pair, tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_server_version_header_carries_the_product_name(running_server):
+    session, connect = running_server
+    conn = connect()
+    conn.request("GET", f"/?t={session.token}")
+    resp = conn.getresponse()
+    resp.read()
+    assert resp.getheader("Server", "").startswith("PhotoFerry/")

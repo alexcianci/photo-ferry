@@ -1,4 +1,4 @@
-# One-time setup for iPhone Photo Drop. Run from the repo root:
+# One-time setup for Photo Ferry. Run from the repo root:
 #   powershell -ExecutionPolicy Bypass -File .\setup\setup.ps1
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -6,7 +6,7 @@ $venvPy  = Join-Path $repo ".venv\Scripts\python.exe"
 $venvPyw = Join-Path $repo ".venv\Scripts\pythonw.exe"
 $port = 8443
 
-Write-Host "== iPhone Photo Drop setup ==" -ForegroundColor Cyan
+Write-Host "== Photo Ferry setup ==" -ForegroundColor Cyan
 
 # 1) venv + install
 if (-not (Test-Path $venvPy)) {
@@ -20,7 +20,7 @@ if (-not (Test-Path $venvPy)) {
 $appData = Join-Path $env:LOCALAPPDATA "iPhonePhotoDrop"
 New-Item -ItemType Directory -Force -Path $appData | Out-Null
 Write-Host "Preparing local certificate authority + server certificate..."
-& $venvPy -c "from iphone_photo_drop import net, tls, paths; tls.setup(net.detect_lan_ip(), paths.ca_cert_path(), paths.ca_key_path(), paths.cert_path(), paths.key_path(), paths.cert_ip_marker())"
+& $venvPy -c "from photo_ferry import net, tls, paths; tls.setup(net.detect_lan_ip(), paths.ca_cert_path(), paths.ca_key_path(), paths.cert_path(), paths.key_path(), paths.cert_ip_marker())"
 # Restrict private keys to the current user only (600-equivalent).
 foreach ($k in @((Join-Path $appData "ca-key.pem"), (Join-Path $appData "key.pem"))) {
     if (Test-Path $k) { icacls $k /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null }
@@ -41,22 +41,25 @@ if (-not $existing) {
 
 # 4) Shortcut in the Pictures folder
 $pictures = Join-Path $env:USERPROFILE "Pictures"
-# Remove the old-named shortcut if present, then create the current one.
-$oldLnk = Join-Path $pictures "Receive from iPhone.lnk"
-if (Test-Path $oldLnk) { Remove-Item $oldLnk -Force }
-$lnkPath  = Join-Path $pictures "Import from iPhone.lnk"
+# Remove shortcuts left by earlier names, then create the current one. They point at
+# a target that no longer exists, so leaving them behind strands a dead icon.
+foreach ($old in @("Receive from iPhone.lnk", "Import from iPhone.lnk")) {
+    $oldLnk = Join-Path $pictures $old
+    if (Test-Path $oldLnk) { Remove-Item $oldLnk -Force }
+}
+$lnkPath  = Join-Path $pictures "Photo Ferry.lnk"
 $iconPath = Join-Path $repo "assets\app.ico"
 $wsh = New-Object -ComObject WScript.Shell
 $lnk = $wsh.CreateShortcut($lnkPath)
 $lnk.TargetPath = $venvPyw
-$lnk.Arguments  = "-m iphone_photo_drop.app"
+$lnk.Arguments  = "-m photo_ferry.app"
 $lnk.WorkingDirectory = $repo
 if (Test-Path $iconPath) { $lnk.IconLocation = "$iconPath,0" }
 else { $lnk.IconLocation = "$env:SystemRoot\System32\imageres.dll,109" }
 $lnk.Description = "Import photos and videos from your iPhone (local only)"
 $lnk.Save()
 
-Write-Host "Done. Double-click 'Import from iPhone' in your Pictures folder." -ForegroundColor Green
+Write-Host "Done. Double-click 'Photo Ferry' in your Pictures folder." -ForegroundColor Green
 Write-Host ""
 Write-Host "Optional, one time per phone: to stop Safari's security warning, open the" -ForegroundColor Yellow
 Write-Host "receiver, tap 'Trust this PC once' on the phone page, install the profile, then" -ForegroundColor Yellow

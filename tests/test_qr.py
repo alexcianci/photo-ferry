@@ -1,4 +1,4 @@
-from iphone_photo_drop import qr
+from photo_ferry import qr
 
 
 def test_png_bytes_are_valid_png():

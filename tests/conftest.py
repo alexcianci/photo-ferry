@@ -5,9 +5,9 @@ import threading
 
 import pytest
 
-from iphone_photo_drop import tls
-from iphone_photo_drop.server import ReceiverServer
-from iphone_photo_drop.session import Session
+from photo_ferry import tls
+from photo_ferry.server import ReceiverServer
+from photo_ferry.session import Session
 
 
 @pytest.fixture

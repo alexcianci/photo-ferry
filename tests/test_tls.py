@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from iphone_photo_drop import tls
+from photo_ferry import tls
 
 needs_openssl = pytest.mark.skipif(tls.find_openssl() is None, reason="openssl not available")
 

@@ -1,4 +1,4 @@
-from iphone_photo_drop import config, paths
+from photo_ferry import config, paths
 
 
 def test_default_config_values():

@@ -14,7 +14,7 @@ from typing import Callable
 from . import net, security, storage
 from .session import Session
 
-_UPLOAD_HTML = resources.files("iphone_photo_drop").joinpath("static/upload.html").read_bytes()
+_UPLOAD_HTML = resources.files("photo_ferry").joinpath("static/upload.html").read_bytes()
 
 
 class ReceiverServer(ThreadingHTTPServer):
@@ -61,7 +61,7 @@ class ReceiverServer(ThreadingHTTPServer):
 
 
 class _Handler(BaseHTTPRequestHandler):
-    server_version = "iPhonePhotoDrop/0.1"
+    server_version = "PhotoFerry/0.2"
 
     @property
     def app(self) -> ReceiverServer:

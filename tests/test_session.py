@@ -1,6 +1,6 @@
 import threading
 
-from iphone_photo_drop.session import Session
+from photo_ferry.session import Session
 
 
 def test_check_pin_wrong_then_locked():
