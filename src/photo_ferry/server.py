@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import net, security, storage
+from .outbox import Outbox
 from .session import Session
 
 _UPLOAD_HTML = resources.files("photo_ferry").joinpath("static/upload.html").read_bytes()
@@ -35,6 +36,7 @@ class ReceiverServer(ThreadingHTTPServer):
         chunk_bytes: int,
         subnet_prefix: int,
         ca_cert_path: Path | None = None,
+        outbox: Outbox | None = None,
         on_shutdown: Callable[[], None] | None = None,
     ) -> None:
         super().__init__((host, port), _Handler)
@@ -46,6 +48,7 @@ class ReceiverServer(ThreadingHTTPServer):
         self.subnet_prefix = subnet_prefix
         self.server_ip = host
         self.ca_cert_path = ca_cert_path
+        self.outbox = outbox if outbox is not None else Outbox()
         self.on_shutdown = on_shutdown
 
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -104,9 +107,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     # CONTRIBUTOR NOTE: the subnet check below is automatic for every route, but token
     # auth is NOT. Any new route that returns private data or performs an action MUST
-    # verify the session token (see do_POST handlers). "/ca.crt" is intentionally
-    # unauthenticated because it serves only the public CA cert; do not copy that
-    # pattern to anything sensitive.
+    # verify the session token (see do_POST handlers and _outbox_gate). "/ca.crt" is
+    # intentionally unauthenticated because it serves only the public CA cert; do not
+    # copy that pattern to anything sensitive.
     def do_GET(self):
         if not self._client_allowed():
             self._send(HTTPStatus.FORBIDDEN, b"off-subnet")
@@ -114,6 +117,12 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/ca.crt":
             self._serve_ca()
+            return
+        if parsed.path == "/outbox":
+            self._serve_manifest()
+            return
+        if parsed.path.startswith("/outbox/"):
+            self._serve_outbox_file(parsed.path[len("/outbox/"):])
             return
         if parsed.path != "/":
             self._send(HTTPStatus.NOT_FOUND, b"not found")
@@ -128,6 +137,68 @@ class _Handler(BaseHTTPRequestHandler):
         self.app.session.touch()
         self._send(HTTPStatus.OK, _UPLOAD_HTML, "text/html; charset=utf-8",
                    {"Set-Cookie": cookie})
+
+    def _outbox_gate(self) -> bool:
+        """Token cookie plus PIN auth, exactly as /upload requires. The subnet check
+        has already run in do_GET."""
+        if not self._valid_token_cookie():
+            self._send(HTTPStatus.FORBIDDEN, b"invalid token")
+            return False
+        if not self.app.session.authed:
+            self._send(HTTPStatus.UNAUTHORIZED, b"not authed")
+            return False
+        return True
+
+    def _serve_manifest(self):
+        if not self._outbox_gate():
+            return
+        self.app.session.touch()
+        items = [{"id": e.id, "name": e.name, "size": e.size, "ctype": e.ctype}
+                 for e in self.app.outbox.list()]
+        self._send(HTTPStatus.OK, json.dumps(items).encode(), "application/json")
+
+    def _serve_outbox_file(self, raw_id: str):
+        if not self._outbox_gate():
+            return
+        # raw_id is untrusted, and is used only as a dictionary key. There is no path
+        # built from it, so traversal cannot reach the filesystem.
+        entry = self.app.outbox.get(urllib.parse.unquote(raw_id))
+        if entry is None:
+            self._send(HTTPStatus.NOT_FOUND, b"not found")
+            return
+        # Re-check filesystem state only: the file may have been deleted since it was
+        # picked. Deliberately no media re-check here — name and ctype were frozen on
+        # the entry at add time, so testing them again would evaluate a pure function
+        # over unchanged inputs and could never fail.
+        if not entry.path.is_file():
+            self._send(HTTPStatus.NOT_FOUND, b"not found")
+            return
+        try:
+            size = entry.path.stat().st_size
+            handle = entry.path.open("rb")
+        except OSError:
+            self._send(HTTPStatus.NOT_FOUND, b"not found")
+            return
+        self.app.session.touch()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", entry.ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        # Strip quotes here rather than trusting sanitize_filename to have done it.
+        # That validator exists for filesystem safety; header correctness must not
+        # depend on a decision made elsewhere for a different reason.
+        header_name = entry.name.replace('"', "")
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{header_name}"')
+        self.end_headers()
+        with handle as f:
+            remaining = size
+            while remaining > 0:
+                chunk = f.read(min(self.app.chunk_bytes, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def _serve_ca(self):
         # The CA *public* certificate (no private key). Unauthenticated on purpose:

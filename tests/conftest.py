@@ -6,6 +6,7 @@ import threading
 import pytest
 
 from photo_ferry import tls
+from photo_ferry.outbox import Outbox
 from photo_ferry.server import ReceiverServer
 from photo_ferry.session import Session
 
@@ -25,10 +26,11 @@ def running_server(tmp_path, cert_pair):
     cert, key = cert_pair
     session = Session.new(max_pin_attempts=3, idle_timeout_sec=600)
     dest = tmp_path / "inbox"
+    outbox = Outbox()
     server = ReceiverServer(
         host="127.0.0.1", port=0, session=session, destination_dir=dest,
         cert_path=cert, key_path=key, max_file_bytes=1024, max_session_bytes=1_000_000,
-        chunk_bytes=64, subnet_prefix=24,
+        chunk_bytes=64, subnet_prefix=24, outbox=outbox,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -40,6 +42,6 @@ def running_server(tmp_path, cert_pair):
         ctx.verify_mode = ssl.CERT_NONE
         return http.client.HTTPSConnection("127.0.0.1", port, context=ctx)
 
-    yield session, connect
+    yield session, connect, outbox
     server.shutdown()
     server.server_close()
