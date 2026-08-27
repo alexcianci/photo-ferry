@@ -5,6 +5,7 @@ import json
 import socket
 import ssl
 import urllib.parse
+from contextlib import contextmanager
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -62,6 +63,7 @@ class ReceiverServer(ThreadingHTTPServer):
         subnet_prefix: int,
         handshake_timeout_sec: float = 10.0,
         request_timeout_sec: float = 30.0,
+        transfer_timeout_sec: float = 300.0,
         ca_cert_path: Path | None = None,
         outbox: Outbox | None = None,
         on_shutdown: Callable[[], None] | None = None,
@@ -85,11 +87,20 @@ class ReceiverServer(ThreadingHTTPServer):
         # handshake belongs in the worker thread, which is finish_request.
         self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.ssl_context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        # Both deadlines guard what an UNAUTHENTICATED peer can hold: the handshake, and
-        # then the request line and headers. Either one stalled used to park a worker
-        # for free, which is the whole point of moving the handshake off the accept loop.
         self.handshake_timeout_sec = handshake_timeout_sec
         self.request_timeout_sec = request_timeout_sec
+        # Two deadlines, because there are two threat models. request_timeout_sec is
+        # tight because it guards the request line and headers, which an UNAUTHENTICATED
+        # peer can reach: complete a handshake, send half a request line, park a worker
+        # for free. transfer_timeout_sec is loose because by the time either transfer
+        # loop runs the peer has passed the subnet check, the token cookie AND the PIN,
+        # and the thing most likely to pause it is the phone locking its screen,
+        # switching apps, or roaming between access points. 300 s absorbs all of those
+        # (a 35 s pause was measured killing a 537 MB upload at the old 30 s ceiling)
+        # while staying under the 600 s session idle timeout, so an abandoned transfer
+        # is still ended by the session policy the UI shows the user rather than
+        # silently by a socket.
+        self.transfer_timeout_sec = transfer_timeout_sec
 
     def get_request(self):
         """Accept only. The socket is still plaintext here, and gets a deadline so a
@@ -169,6 +180,36 @@ class _Handler(BaseHTTPRequestHandler):
         resolves by the time setup() asks for it.
         """
         return self.app.request_timeout_sec
+
+    @contextmanager
+    def _transfer_deadline(self):
+        """Widen the socket deadline for a bulk transfer phase, then put it back.
+
+        Deliberately a phase-scoped swap rather than a refresh next to the per-chunk
+        session.touch(): settimeout is already per-operation, so re-applying the same
+        number every chunk would be a no-op -- the fault was the VALUE, not its
+        staleness. A phase swap is also the only mechanism that reaches the upload side,
+        where the read loop lives inside storage.save_stream and offers no per-chunk
+        seam to hook.
+
+        Restoring the previous value matters for the response written after the phase
+        ends, not for a subsequent request: _Handler never sets protocol_version, so it
+        is HTTP/1.0 and close_connection is always True -- there is no next request line
+        on this connection. Without the restore, a phone that vanished right after its
+        last body byte would park a worker for the full transfer deadline trying to
+        write a forty-byte response. Measured: the upload's 200 goes out with the socket
+        back at 3 s rather than the 77 s the transfer phase ran under.
+        """
+        sock = self.connection
+        previous = sock.gettimeout()
+        sock.settimeout(self.app.transfer_timeout_sec)
+        try:
+            yield
+        finally:
+            try:
+                sock.settimeout(previous)
+            except OSError:
+                pass  # the peer went away mid-transfer; the socket is already done
 
     def _client_allowed(self) -> bool:
         return net.client_in_subnet(
@@ -286,7 +327,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Disposition", _content_disposition(entry.name))
         self.end_headers()
-        with handle as f:
+        # The whole stream runs under the loose deadline. A TimeoutError out of
+        # wfile.write here is the phone having gone away for good; handle_one_request
+        # catches it, sets close_connection and returns, so it stays an ordinary
+        # disconnect and never reaches socketserver.handle_error.
+        with self._transfer_deadline(), handle as f:
             remaining = size
             while remaining > 0:
                 chunk = f.read(min(self.app.chunk_bytes, remaining))
@@ -376,12 +421,22 @@ class _Handler(BaseHTTPRequestHandler):
             self._reject_upload(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, b"session limit reached")
             return
         try:
-            saved = storage.save_stream(
-                self.rfile, length, self.app.destination_dir, raw_name,
-                max_file_bytes=self.app.max_file_bytes, chunk_bytes=self.app.chunk_bytes,
-            )
+            with self._transfer_deadline():
+                saved = storage.save_stream(
+                    self.rfile, length, self.app.destination_dir, raw_name,
+                    max_file_bytes=self.app.max_file_bytes,
+                    chunk_bytes=self.app.chunk_bytes,
+                )
         except ValueError:
             self._reject_upload(HTTPStatus.BAD_REQUEST, b"rejected")
+            return
+        # TimeoutError MUST be caught above OSError, which it subclasses. A stalled
+        # phone otherwise lands in the disk-failure branch below and is told its storage
+        # gave out -- measured, a 35 s pause mid-upload answered 507 Insufficient
+        # Storage. save_stream's own `finally` unlinks the .part file either way, so
+        # nothing partial is left behind; only the diagnosis was wrong.
+        except TimeoutError:
+            self._reject_upload(HTTPStatus.REQUEST_TIMEOUT, b"upload stalled")
             return
         except OSError:
             self._reject_upload(HTTPStatus.INSUFFICIENT_STORAGE, b"write failed")

@@ -23,3 +23,13 @@ def test_socket_timeouts_have_safe_defaults():
     cfg = config.default_config()
     assert cfg.handshake_timeout_sec == 10.0
     assert cfg.request_timeout_sec == 30.0
+    assert cfg.transfer_timeout_sec == 300.0
+    # The loose transfer deadline must stay under the session idle timeout, or an
+    # abandoned transfer outlives the policy the UI is showing the user.
+    assert cfg.transfer_timeout_sec < cfg.idle_timeout_sec
+
+
+def test_batch_limits_have_safe_defaults():
+    cfg = config.default_config()
+    assert cfg.max_batch_bytes == 300 * 1024 * 1024
+    assert cfg.max_batch_files == 25

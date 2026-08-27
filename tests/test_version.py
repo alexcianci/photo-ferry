@@ -193,19 +193,54 @@ def test_0_2_0_is_not_tagged_before_the_feature_is_shippable():
     )
 
 
+def test_the_gate_has_not_retired_silently():
+    """Exactly one surface is still outstanding in the real tree today.
+
+    The scenario table below runs entirely on literals, so this is the only assertion
+    left watching the actual source. Task 8 landed the intake caller in ui.py, leaving
+    the receive tab in upload.html as the last missing half. When Phase 4 lands this
+    goes empty and the gate retires -- which is by design, but must not happen
+    unnoticed: the previous find_spec gate went quiet the moment outbox.py was written,
+    before it was ever committed, and nothing failed to announce it. Updating this test
+    is the acknowledgement that the retirement was deliberate.
+
+    Asserted on which surface is missing rather than on the wording of the message, so
+    rewording _missing_surfaces() cannot fail here with a confidently wrong diagnosis.
+    """
+    assert _SEND_INTAKE_CALL in _ui_code(), (
+        f"{_SEND_INTAKE_CALL!r} vanished from ui.py -- Outbox.add has no caller again, "
+        "so both routes are reachable and permanently empty."
+    )
+    missing = _missing_surfaces()
+    assert [m for m in missing if "upload.html" in m] == missing, (
+        f"an unexpected surface is missing: {missing}"
+    )
+    assert len(missing) == 1, (
+        f"the gate's real-tree state moved: {missing}. If Phase 4 landed, the gate has "
+        "retired on purpose -- confirm that on device, then update this test."
+    )
+
+
 def test_release_gate_fires_while_either_surface_is_missing(monkeypatch):
     """The gate must fail today, and with either half alone. Proven by injecting a tag
     rather than creating one: this repo must not carry a 0.2.0 tag, not even briefly."""
     monkeypatch.setattr(_THIS, "_repo_tags", lambda: ["v0.2.0"])
     have_ui = f"        {_SEND_INTAKE_CALL}paths)"
     have_html = f"<button class='tab'>{_RECEIVE_TAB_LABEL}</button>"
+    # Absent surfaces are literals too, not the live source read off disk. They used to
+    # be `_ui_code()` and `_upload_html()`, which worked only while both surfaces really
+    # were missing -- so landing Task 8's intake caller turned the "receive tab only"
+    # row below into both-surfaces-present, where the gate correctly stays silent and
+    # the pytest.raises failed with DID NOT RAISE. A scenario table that reads the tree
+    # it is testing stops being a table of scenarios the moment the tree moves. Watching
+    # the real tree is test_the_gate_has_not_retired_silently's job instead.
+    no_ui = "class ReceiverWindow:\n    def offer(self, paths):\n        pass\n"
+    no_html = "<button class='tab'>Send to PC</button>"
 
-    # Neither surface: the state of the repo as this test is written.
-    assert _missing_surfaces(), "expected both surfaces absent in the real tree"
     for ui_text, html_text, label in (
-        (_ui_code(), _upload_html(), "neither surface"),
-        (have_ui, _upload_html(), "intake only"),
-        (_ui_code(), have_html, "receive tab only"),
+        (no_ui, no_html, "neither surface"),
+        (have_ui, no_html, "intake only"),
+        (no_ui, have_html, "receive tab only"),
     ):
         monkeypatch.setattr(_THIS, "_ui_code", lambda t=ui_text: t)
         monkeypatch.setattr(_THIS, "_upload_html", lambda t=html_text: t)

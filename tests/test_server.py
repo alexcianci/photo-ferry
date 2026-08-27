@@ -748,3 +748,127 @@ def test_request_timeout_sec_actually_bounds_the_read(cert_pair, tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def _put_upload_headers(conn, cookie, name, length):
+    """Open an upload request and stop, so the body can be fed in around a pause."""
+    conn.putrequest("POST", "/upload")
+    conn.putheader("Cookie", cookie)
+    conn.putheader("X-Filename", name)
+    conn.putheader("Content-Type", "image/jpeg")
+    conn.putheader("Content-Length", str(length))
+    conn.endheaders()
+
+
+def test_upload_survives_a_pause_longer_than_the_header_deadline(cert_pair, tmp_path):
+    """A phone that locks its screen mid-upload must not lose the upload.
+
+    request_timeout_sec is 1.0 s here and the pause is 3.0 s, so this fails outright if
+    the tight header deadline is still governing the body read. Bounding the whole
+    connection with it was measured answering 507 to a 35 s pause at the shipped 30 s,
+    with nothing landing in the destination.
+    """
+    with _standalone_server(cert_pair, tmp_path, request_timeout_sec=1.0,
+                            transfer_timeout_sec=20.0) as (session, connect, _ob, _srv):
+        cookie = _authed_cookie(session, connect)
+        body = b"IMGDATA" * 64
+        conn = connect()
+        conn.timeout = 30.0
+        _put_upload_headers(conn, cookie, "slow.jpg", len(body))
+        conn.send(body[:100])
+        time.sleep(3.0)  # the screen locks
+        conn.send(body[100:])
+        resp = conn.getresponse()
+        status = resp.status
+        resp.read()
+        assert status == 200, f"a 3s pause lost the upload: {status}"
+        assert sorted(p.name for p in (tmp_path / "inbox").iterdir()) == ["slow.jpg"]
+
+
+def test_upload_stalled_past_the_transfer_deadline_is_408_not_507(cert_pair, tmp_path):
+    """A stalled phone must never be told its disk failed.
+
+    TimeoutError subclasses OSError, so without an earlier clause it falls into
+    _handle_upload's disk-failure branch and the user is diagnosed with storage trouble
+    they do not have. save_stream's own `finally` unlinks the .part file regardless, so
+    the destination is asserted empty here to show the wrong status was the only defect.
+    """
+    with _standalone_server(cert_pair, tmp_path, request_timeout_sec=1.0,
+                            transfer_timeout_sec=1.0) as (session, connect, _ob, _srv):
+        cookie = _authed_cookie(session, connect)
+        conn = connect()
+        conn.timeout = 30.0
+        _put_upload_headers(conn, cookie, "abandoned.jpg", 448)
+        conn.send(b"IMGDATA" * 10)  # and then never the remaining bytes
+        resp = conn.getresponse()
+        status = resp.status
+        resp.read()
+        assert status == 408, f"a stalled phone was told its disk failed: {status}"
+        assert list((tmp_path / "inbox").iterdir()) == [], "a partial file was left behind"
+
+
+def test_download_survives_a_pause_longer_than_the_header_deadline(cert_pair, tmp_path):
+    """The commit before this one added a per-chunk touch() so a long download would
+    outlive the 600 s idle timeout; a 30 s socket deadline on the same loop is 20x
+    tighter and truncates instead of stopping cleanly.
+
+    The payload is far larger than any send buffer, so the server genuinely is blocked
+    in wfile.write during the pause rather than having handed everything to the kernel.
+    """
+    with _standalone_server(cert_pair, tmp_path, request_timeout_sec=1.0,
+                            transfer_timeout_sec=20.0,
+                            chunk_bytes=256 * 1024) as (session, connect, outbox, _srv):
+        payload = b"X" * (8 * 1024 * 1024)
+        src = tmp_path / "big.jpg"
+        src.write_bytes(payload)
+        entry = outbox.add([src])[0]
+        cookie = _authed_cookie(session, connect)
+
+        conn = connect()
+        conn.timeout = 60.0
+        conn.request("GET", f"/outbox/{entry.id}", headers={"Cookie": cookie})
+        resp = conn.getresponse()
+        head = resp.read(4096)
+        time.sleep(3.0)  # the phone switches apps
+        rest = resp.read()
+        assert len(head) + len(rest) == len(payload)
+
+
+def test_download_stalled_past_the_transfer_deadline_is_a_quiet_disconnect(cert_pair,
+                                                                           tmp_path):
+    """A download deadline is newly reachable from wfile.write, and must stay quiet.
+
+    handle_one_request catches TimeoutError around method(), sets close_connection and
+    returns, so a phone that goes away for good is an ordinary disconnect. If it ever
+    escaped instead, socketserver.handle_error would print a traceback carrying absolute
+    paths -- the same thing finish_request goes out of its way to avoid for a failed
+    handshake.
+    """
+    import http.client
+
+    with _standalone_server(cert_pair, tmp_path, request_timeout_sec=1.0,
+                            transfer_timeout_sec=1.0,
+                            chunk_bytes=256 * 1024) as (session, connect, outbox, server):
+        errors = []
+        server.handle_error = lambda *a: errors.append(a)
+        payload = b"X" * (8 * 1024 * 1024)
+        src = tmp_path / "big.jpg"
+        src.write_bytes(payload)
+        entry = outbox.add([src])[0]
+        cookie = _authed_cookie(session, connect)
+
+        conn = connect()
+        conn.timeout = 60.0
+        conn.request("GET", f"/outbox/{entry.id}", headers={"Cookie": cookie})
+        resp = conn.getresponse()
+        try:
+            head = resp.read(4096)
+        except (OSError, http.client.HTTPException):
+            head = b""
+        time.sleep(3.0)  # nothing is read; the server's write hits the 1.0s deadline
+        assert errors == [], f"a stalled download reached handle_error: {errors}"
+        try:
+            rest = resp.read()
+        except (OSError, http.client.HTTPException):
+            rest = b""
+        assert len(head) + len(rest) < len(payload), "the transfer deadline never fired"

@@ -5,6 +5,7 @@ import sys
 
 from . import net, qr, tls
 from .config import default_config
+from .outbox import Outbox
 from .server import ReceiverServer
 from .session import Session
 from .ui import ReceiverWindow
@@ -56,6 +57,10 @@ def main() -> None:
         max_pin_attempts=cfg.max_pin_attempts,
         idle_timeout_sec=cfg.idle_timeout_sec,
     )
+    # One Outbox, shared: the window adds to it and the server serves from it. Letting
+    # ReceiverServer build its own would leave the send panel filling an object no route
+    # can see, so the panel would look like it worked and the phone would see nothing.
+    outbox = Outbox()
     server = ReceiverServer(
         host=lan_ip, port=cfg.port, session=session,
         destination_dir=cfg.destination_dir,
@@ -64,12 +69,14 @@ def main() -> None:
         chunk_bytes=cfg.chunk_bytes, subnet_prefix=cfg.subnet_prefix,
         handshake_timeout_sec=cfg.handshake_timeout_sec,
         request_timeout_sec=cfg.request_timeout_sec,
+        transfer_timeout_sec=cfg.transfer_timeout_sec,
         ca_cert_path=cfg.ca_cert_path,
+        outbox=outbox,
     )
     url = qr.receiver_url(lan_ip, cfg.port, session.token)
     # The UI thread owns shutdown (it polls session.locked_out / is_idle); the server's
     # on_shutdown callback is intentionally left unset here.
-    ReceiverWindow(server, url, session.pin).run()
+    ReceiverWindow(server, url, session.pin, outbox, cfg.max_batch_files).run()
 
 
 if __name__ == "__main__":
