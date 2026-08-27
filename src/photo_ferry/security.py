@@ -91,10 +91,22 @@ def sanitize_filename(raw: str) -> str:
     return base
 
 
+def normalize_ctype(content_type: str) -> str:
+    """The canonical form of a content type: parameters dropped, trimmed, lowercased.
+
+    This is the value `is_allowed_media` compares, so it must also be the value that
+    anything stores or writes into a header. Validating the normalized form while
+    keeping the raw one is what let a `Content-Type` carrying a stray CRLF pass the
+    allowlist and then split the response header block, pushing `nosniff` and the
+    `attachment` disposition out of the headers and into the body.
+    """
+    return (content_type or "").split(";")[0].strip().lower()
+
+
 def is_allowed_media(filename: str, content_type: str) -> bool:
     if _extension(filename) not in ALLOWED_EXTENSIONS:
         return False
-    ctype = (content_type or "").split(";")[0].strip().lower()
+    ctype = normalize_ctype(content_type)
     if ctype in _LENIENT_CONTENT_TYPES:
         return True
     return ctype in ALLOWED_CONTENT_TYPES

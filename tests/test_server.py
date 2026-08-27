@@ -1,6 +1,7 @@
 import builtins
 import io
 import json
+import urllib.parse
 
 
 def _get_token_cookie(session, conn):
@@ -382,3 +383,126 @@ def test_outbox_fetch_touches_the_session(running_server, tmp_path):
     conn.request("GET", f"/outbox/{entry.id}", headers={"Cookie": cookie})
     conn.getresponse().read()
     assert session.is_idle() is False
+
+
+def test_outbox_fetch_touches_the_session_mid_stream(running_server, tmp_path,
+                                                     monkeypatch):
+    """Touching only before the first byte let the idle timer kill a long transfer.
+
+    The UI polls session.is_idle() every 400 ms and calls stop() when it trips, so at
+    the shipped 600 s timeout any file slow enough to outlast it died halfway. The
+    fixture uses chunk_bytes=64, so this file spans many chunks and the timer must be
+    refreshed inside the loop, not once at the top of it.
+    """
+    session, connect, outbox = running_server
+    src = tmp_path / "big.jpg"
+    src.write_bytes(b"X" * 4096)  # 64 chunks at the fixture's chunk_bytes
+    entry = outbox.add([src])[0]
+    cookie = _authed_cookie(session, connect)
+
+    touches = []
+    real_touch = session.touch
+    monkeypatch.setattr(session, "touch", lambda: (touches.append(1), real_touch())[1])
+
+    conn = connect()
+    conn.request("GET", f"/outbox/{entry.id}", headers={"Cookie": cookie})
+    body = conn.getresponse().read()
+    assert body == b"X" * 4096
+    # One touch before the headers, then one per chunk written. Anything approaching 1
+    # means the refresh is back outside the loop.
+    assert len(touches) > 10, f"expected a touch per chunk, saw {len(touches)}"
+
+
+def test_outbox_file_header_block_survives_a_poisoned_ctype(running_server, tmp_path,
+                                                            monkeypatch):
+    """A content type carrying CR/LF must never reach the wire intact.
+
+    Either the entry is refused at add time, or it is stored normalized and serves a
+    clean single-line header. Both are acceptable; what is not is a split header block,
+    which drops nosniff and the attachment disposition out of the headers and into the
+    body -- exactly the two things a route serving user files cannot afford to lose.
+    """
+    session, connect, outbox = running_server
+    import photo_ferry.outbox as outbox_mod
+    cookie = _authed_cookie(session, connect)
+
+    # Built from chr() rather than escapes so the literal CR/LF cannot be lost to
+    # whatever edits this file next -- the bytes under test are the whole point.
+    CR, LF = chr(13), chr(10)
+    poisons = [
+        "image/jpeg" + CR + LF,
+        "image/jpeg" + CR + LF + "X-Evil: 1",
+        "  IMAGE/JPEG  ",
+        "image/" + CR + LF + "jpeg",
+        "image/jpeg" + LF + "X-Evil: 1",
+    ]
+    served = 0
+    for i, evil in enumerate(poisons):
+        monkeypatch.setattr(outbox_mod, "guess_ctype", lambda name, v=evil: v)
+        src = tmp_path / f"poison{i}.jpg"
+        src.write_bytes(b"IMGDATA")
+        added = outbox.add([src])
+        if not added:
+            continue  # refused at the door, the other acceptable outcome
+        served += 1
+        conn = connect()
+        conn.request("GET", f"/outbox/{added[0].id}", headers={"Cookie": cookie})
+        resp = conn.getresponse()
+        body = resp.read()
+        assert resp.status == 200
+        assert body == b"IMGDATA"
+        ctype = resp.getheader("Content-Type")
+        assert ctype == "image/jpeg", f"{evil!r} reached the header as {ctype!r}"
+        assert CR not in ctype and LF not in ctype
+        assert resp.getheader("X-Content-Type-Options") == "nosniff"
+        assert resp.getheader("Content-Disposition", "").startswith("attachment;")
+        assert resp.getheader("X-Evil") is None
+        assert b"X-Evil" not in body
+    assert served >= 2, "the normalizing cases must actually be served, or this proves nothing"
+
+
+def test_outbox_file_non_ascii_name_streams_with_valid_headers(running_server, tmp_path):
+    """CJK and emoji names used to kill the response before a byte was ever flushed.
+
+    send_header encodes latin-1 strictly and end_headers had not run, so the client saw
+    a dropped connection rather than a status. The plain filename= parameter now carries
+    an ASCII transliteration and the real name rides in RFC 6266 filename*.
+    """
+    session, connect, outbox = running_server
+    src = tmp_path / "写真 📷 holiday.jpg"
+    src.write_bytes(b"IMGDATA")
+    entry = outbox.add([src])[0]
+    assert entry.name == "写真 📷 holiday.jpg"
+    cookie = _authed_cookie(session, connect)
+
+    conn = connect()
+    conn.request("GET", f"/outbox/{entry.id}", headers={"Cookie": cookie})
+    resp = conn.getresponse()
+    body = resp.read()
+    assert resp.status == 200
+    assert body == b"IMGDATA"
+    assert resp.getheader("Content-Type") == "image/jpeg"
+    assert resp.getheader("X-Content-Type-Options") == "nosniff"
+
+    disposition = resp.getheader("Content-Disposition", "")
+    assert disposition.startswith("attachment;")
+    disposition.encode("latin-1")  # the whole point: this must not raise
+    assert 'filename="' in disposition
+    assert "filename*=UTF-8''" in disposition
+    recovered = urllib.parse.unquote(disposition.split("filename*=UTF-8''")[1])
+    assert recovered == entry.name
+
+
+def test_outbox_manifest_keeps_the_real_non_ascii_name(running_server, tmp_path):
+    """The header degrades to ASCII out of necessity; the manifest must not."""
+    session, connect, outbox = running_server
+    src = tmp_path / "写真 📷.jpg"
+    src.write_bytes(b"IMGDATA")
+    outbox.add([src])
+    cookie = _authed_cookie(session, connect)
+    conn = connect()
+    conn.request("GET", "/outbox", headers={"Cookie": cookie})
+    resp = conn.getresponse()
+    assert resp.status == 200
+    items = json.loads(resp.read())
+    assert [i["name"] for i in items] == ["写真 📷.jpg"]

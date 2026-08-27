@@ -17,16 +17,33 @@ Asking importlib.metadata is still worth doing, but it answers a different quest
 "did you forget to reinstall?" -- so it is a separate test with its own remedy, where it
 cannot stand in for the pyproject comparison.
 
-The last test is the assertable half of the 0.2.0 release gate. The README already
-describes two-way transfer, which does not exist until the Phase 2 outbox lands, so a
-0.2.0 tag would publish a promise this repo cannot keep. The gate's other half -- that
-an on-device run has passed -- leaves no artifact in the repo, so it is deliberately
-not asserted here and not faked with a marker file. It stays a human check.
+The last three tests are the assertable half of the 0.2.0 release gate. The README
+already describes two-way transfer, so a 0.2.0 tag publishes a promise this repo cannot
+keep until the whole path exists.
+
+The gate originally asked whether `photo_ferry.outbox` was importable, and Phase 2
+answered that -- which retired it silently, with nothing failing to say so. Worse, it
+retired early: `find_spec` resolves against the file on disk under an editable install,
+so the gate went quiet the moment outbox.py was written, before it was ever committed.
+Server routes are not a shipped feature either. Nothing in the desktop app offers a file
+and nothing on the phone asks for one, so the outbox today is reachable and permanently
+empty. The gate therefore now asks for the two surfaces that are still absent: the send
+intake caller in ui.py (Phase 3, Task 8) and the receive tab in upload.html (Phase 4,
+Task 10). Both are asserted against source on disk, with whole-line comments stripped, for
+the same reason as tests/test_protected_identifiers.py -- a comment naming the seam must
+not be able to satisfy the assertion that the seam exists.
+
+This gate goes quiet again when Phase 4 lands, and that is by design: at that point every
+artifact it can see is present. What it can never see is the on-device run, which leaves
+nothing in the repo and is deliberately neither asserted here nor faked with a marker
+file. That half stays a human check, and once Phase 4 is in it is the only thing left
+between a green suite and a tag that should not exist yet.
 """
 import importlib.metadata
-import importlib.util
+import re
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -35,8 +52,14 @@ import pytest
 import photo_ferry
 from photo_ferry import server
 
+_THIS = sys.modules[__name__]
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _GATED_VERSION = "0.2.0"
+# The two surfaces that make the outbox a feature rather than a pair of unreachable
+# routes. Both are the literal the plan's own code introduces, so landing Task 8 and
+# Task 10 as written satisfies this gate without anyone having to remember it exists.
+_SEND_INTAKE_CALL = "self.outbox.add("      # ui.py, Phase 3 Task 8
+_RECEIVE_TAB_LABEL = "Get from PC"          # upload.html, Phase 4 Task 10
 # Stripped in order, first match wins. These two cannot overlap, but keep any addition
 # ordered longest-first so a shorter prefix never strips part of a longer one.
 _TAG_PREFIXES = ("release-", "v")
@@ -118,14 +141,83 @@ def _repo_tags() -> list[str]:
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
-def test_0_2_0_is_not_tagged_before_the_outbox_exists():
+def _ui_code() -> str:
+    """ui.py with whole-line `#` comments dropped, so a comment cannot satisfy the gate."""
+    text = (_REPO_ROOT / "src" / "photo_ferry" / "ui.py").read_text(encoding="utf-8")
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def _upload_html() -> str:
+    """upload.html with HTML comments dropped, for the same reason as _ui_code."""
+    text = (_REPO_ROOT / "src" / "photo_ferry" / "static" / "upload.html").read_text(
+        encoding="utf-8"
+    )
+    return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+
+
+def _missing_surfaces() -> list[str]:
+    """Which halves of the two-way feature are still absent from the source on disk.
+
+    Deliberately not `find_spec` and not the server routes. Both of those were already
+    true while the feature was unusable -- see the module docstring.
+    """
+    missing = []
+    if _SEND_INTAKE_CALL not in _ui_code():
+        missing.append(
+            f"the send intake caller in ui.py (no {_SEND_INTAKE_CALL!r}; Phase 3, Task 8)"
+        )
+    if _RECEIVE_TAB_LABEL not in _upload_html():
+        missing.append(
+            f"the receive tab in upload.html (no {_RECEIVE_TAB_LABEL!r}; Phase 4, Task 10)"
+        )
+    return missing
+
+
+def test_0_2_0_is_not_tagged_before_the_feature_is_shippable():
     tagged = sorted(tag for tag in _repo_tags() if _gates_0_2_0(tag))
     if not tagged:
         return  # No 0.2.0 tag yet, so there is nothing to gate.
-    assert importlib.util.find_spec("photo_ferry.outbox") is not None, (
-        f"Release gate: {tagged} is tagged, but photo_ferry.outbox is missing.\n"
-        "The README already advertises PC-to-camera-roll transfer, and this is a public\n"
-        "repo, so tagging 0.2.0 publishes a feature that does not exist yet. 0.2.0 must\n"
-        "not be tagged until Phase 2 through Phase 4 are complete and the on-device run\n"
-        "has passed. Delete the tag, or land the outbox first."
+    missing = _missing_surfaces()
+    assert not missing, (
+        f"Release gate: {tagged} is tagged, but the two-way feature is not shippable.\n"
+        + "".join(f"  Missing: {m}\n" for m in missing)
+        + "The README already advertises PC-to-camera-roll transfer, and this is a\n"
+        "public repo with a Sponsor button, so tagging 0.2.0 publishes a feature a user\n"
+        "cannot reach. The Phase 2 server routes alone do not count: nothing offers a\n"
+        "file and nothing asks for one, so the outbox is reachable and always empty.\n"
+        "Delete the tag, or land the missing surfaces first. Note that even a fully\n"
+        "green suite does not clear this release -- the on-device run leaves no artifact\n"
+        "here and stays a human check."
     )
+
+
+def test_release_gate_fires_while_either_surface_is_missing(monkeypatch):
+    """The gate must fail today, and with either half alone. Proven by injecting a tag
+    rather than creating one: this repo must not carry a 0.2.0 tag, not even briefly."""
+    monkeypatch.setattr(_THIS, "_repo_tags", lambda: ["v0.2.0"])
+    have_ui = f"        {_SEND_INTAKE_CALL}paths)"
+    have_html = f"<button class='tab'>{_RECEIVE_TAB_LABEL}</button>"
+
+    # Neither surface: the state of the repo as this test is written.
+    assert _missing_surfaces(), "expected both surfaces absent in the real tree"
+    for ui_text, html_text, label in (
+        (_ui_code(), _upload_html(), "neither surface"),
+        (have_ui, _upload_html(), "intake only"),
+        (_ui_code(), have_html, "receive tab only"),
+    ):
+        monkeypatch.setattr(_THIS, "_ui_code", lambda t=ui_text: t)
+        monkeypatch.setattr(_THIS, "_upload_html", lambda t=html_text: t)
+        with pytest.raises(AssertionError, match="not shippable"):
+            test_0_2_0_is_not_tagged_before_the_feature_is_shippable()
+
+
+def test_release_gate_goes_green_once_both_surfaces_exist(monkeypatch):
+    """And it must stop firing when Phase 4 lands, or it is a gate nobody can ever pass."""
+    monkeypatch.setattr(_THIS, "_repo_tags", lambda: ["v0.2.0"])
+    monkeypatch.setattr(_THIS, "_ui_code", lambda: f"        {_SEND_INTAKE_CALL}paths)")
+    monkeypatch.setattr(
+        _THIS, "_upload_html", lambda: f"<button class='tab'>{_RECEIVE_TAB_LABEL}</button>"
+    )
+    test_0_2_0_is_not_tagged_before_the_feature_is_shippable()

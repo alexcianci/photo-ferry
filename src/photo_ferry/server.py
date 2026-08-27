@@ -18,6 +18,30 @@ from .session import Session
 _UPLOAD_HTML = resources.files("photo_ferry").joinpath("static/upload.html").read_bytes()
 
 
+def _content_disposition(name: str) -> str:
+    """An `attachment` disposition that survives header encoding for any filename.
+
+    `send_header` encodes latin-1 strictly, so a CJK or emoji name raised
+    UnicodeEncodeError partway through the header block. Because `end_headers` had not
+    run yet, nothing was ever flushed and the client saw a dropped connection rather
+    than a status it could act on -- a worse failure than a 500. `sanitize_filename`
+    permits non-ASCII, so an ordinary photo off a phone reached this.
+
+    The plain `filename=` parameter therefore carries an ASCII-only transliteration,
+    and the real name travels in RFC 6266's `filename*`, which is percent-encoded and
+    so ASCII by construction. Quotes and backslashes are replaced rather than trusted
+    to `sanitize_filename`: that validator exists for filesystem safety, and header
+    correctness must not depend on a decision made elsewhere for a different reason.
+    The manifest still reports the real name, unchanged.
+    """
+    ascii_name = "".join(
+        ch if ch.isascii() and ch.isprintable() and ch not in '"\\' else "_"
+        for ch in name
+    )
+    quoted = urllib.parse.quote(name, safe="")
+    return f"attachment; filename=\"{ascii_name or 'download'}\"; filename*=UTF-8''{quoted}"
+
+
 class ReceiverServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -184,12 +208,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", entry.ctype)
         self.send_header("Content-Length", str(size))
         self.send_header("X-Content-Type-Options", "nosniff")
-        # Strip quotes here rather than trusting sanitize_filename to have done it.
-        # That validator exists for filesystem safety; header correctness must not
-        # depend on a decision made elsewhere for a different reason.
-        header_name = entry.name.replace('"', "")
-        self.send_header("Content-Disposition",
-                         f'attachment; filename="{header_name}"')
+        self.send_header("Content-Disposition", _content_disposition(entry.name))
         self.end_headers()
         with handle as f:
             remaining = size
@@ -199,6 +218,12 @@ class _Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
+                # Refresh the idle timer per chunk, not only before the first byte.
+                # ui.py polls session.is_idle() every 400 ms and calls stop() when it
+                # trips, so any transfer lasting longer than the idle timeout was being
+                # killed midway -- at the shipped 600 s that is a 2 GiB file on any link
+                # under about 3.5 MB/s. touch() is one lock and one clock read.
+                self.app.session.touch()
 
     def _serve_ca(self):
         # The CA *public* certificate (no private key). Unauthenticated on purpose:

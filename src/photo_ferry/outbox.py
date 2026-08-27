@@ -52,7 +52,13 @@ class Outbox:
                 name = security.sanitize_filename(path.name)
             except ValueError:
                 continue
-            ctype = guess_ctype(name)
+            # Store the value the allowlist actually validated, never the raw one it was
+            # derived from. `is_allowed_media` compares a normalized string, so keeping
+            # the raw form here let a type carrying a stray CRLF -- mimetypes reads these
+            # from the Windows registry, which is user-writable -- pass validation and
+            # then split the Content-Type header. Normalizing first also makes the stored
+            # value provably one of the allowlist literals, so it is always single-line.
+            ctype = security.normalize_ctype(guess_ctype(name))
             if not security.is_allowed_media(name, ctype):
                 continue
             try:
