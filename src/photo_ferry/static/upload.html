@@ -339,13 +339,108 @@ function showTab(which) {
   $("receive-screen").classList.toggle("hidden", send);
   $("tab-send").classList.toggle("active", send);
   $("tab-receive").classList.toggle("active", !send);
-  // loadOutbox() arrives in Task 11, which fetches the manifest. Deliberately not
-  // stubbed here: a no-op stub would silently swallow the wiring this line exists for.
-  // Until it lands, tapping the receive tab throws ReferenceError and that screen stays empty.
+  // Refetched on every tap of the receive tab, not just the first: the PC can offer
+  // more files at any moment, so the tab doubles as the refresh gesture.
   if (!send) loadOutbox();
 }
 $("tab-send").onclick = () => showTab("send");
 $("tab-receive").onclick = () => showTab("receive");
+
+// --- Receive ---
+// A second spelling of Config.max_batch_bytes / Config.max_batch_files. This page is a
+// static file with no template layer, so it cannot read the Python config at runtime and
+// the numbers have to exist twice. Config stays canonical; tests/test_batching.py binds
+// this copy to it, so if that test goes red the fix is to change these two lines.
+const MAX_BATCH_BYTES = 300 * 1024 * 1024;   // mirrors config.max_batch_bytes
+const MAX_BATCH_FILES = 25;                  // mirrors config.max_batch_files
+
+function buildBatches(manifest) {
+  const batches = [];
+  let current = [], bytes = 0;
+  for (const item of manifest) {
+    const tooMany = current.length >= MAX_BATCH_FILES;
+    const tooBig = bytes + item.size > MAX_BATCH_BYTES;
+    // `current.length &&` keeps a single oversized file in a batch of its own
+    // rather than looping forever on an empty batch it can never fit into.
+    if (current.length && (tooMany || tooBig)) {
+      batches.push(current);
+      current = []; bytes = 0;
+    }
+    current.push(item);
+    bytes += item.size;
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
+
+// Serial number for loadOutbox runs. Two taps of the receive tab overlap freely: the
+// onclick fires whether or not that tab is already active, showTab() calls loadOutbox
+// without awaiting it, and the clear below is synchronous while the append is not. So
+// both runs blank #batches, then both append once their fetch resolves, and every
+// batch renders twice. A run that finds the counter has moved on drops whatever it
+// was about to write -- to #batches and to #receive-msg alike.
+let outboxRun = 0;
+
+async function loadOutbox() {
+  const run = ++outboxRun;
+  const stale = () => run !== outboxRun;
+  const wrap = $("batches");
+  const msg = $("receive-msg");
+  msg.className = "msg";
+  msg.textContent = "Checking…";
+  wrap.innerHTML = "";
+  // Not the module-level `items`: that one is the send-side selection. This is the
+  // outbox manifest, a fresh array of { id, name, size, ctype } straight off GET /outbox.
+  let manifest;
+  try {
+    const r = await fetch("/outbox");
+    if (stale()) return;
+    if (!r.ok) throw new Error(String(r.status));
+    manifest = await r.json();
+    if (stale()) return;
+  } catch {
+    if (stale()) return;
+    msg.className = "msg err";
+    msg.textContent = "Couldn't reach your PC.";
+    return;
+  }
+  if (!manifest.length) {
+    msg.textContent = "Nothing yet. Add photos on your PC, then tap this tab again.";
+    return;
+  }
+  msg.textContent = "";
+  buildBatches(manifest).forEach((batch, i) => wrap.appendChild(batchCard(batch, i)));
+}
+
+function batchCard(batch, index) {
+  const total = batch.reduce((sum, it) => sum + it.size, 0);
+  const card = document.createElement("div");
+  card.className = "batch";
+
+  const title = document.createElement("h2");
+  // textContent, not innerHTML, for every field below: the name is whatever the file on
+  // the PC was called, so it must never be parsed as markup.
+  title.textContent = batch.length === 1 ? batch[0].name : `Group ${index + 1}`;
+
+  const size = document.createElement("div");
+  size.className = "size";
+  size.textContent = `${batch.length} item${batch.length === 1 ? "" : "s"} · ${humanSize(total)}`;
+
+  const action = document.createElement("button");
+  action.textContent = "Prepare";
+
+  const status = document.createElement("p");
+  status.className = "msg";
+
+  card.append(title, size, action, status);
+  // prepareBatch() arrives in Task 12, which fetches each file in the batch and hands
+  // the group to the Web Share API. Deliberately not stubbed: a no-op stub would
+  // silently swallow the wiring this line exists for. Until it lands the card renders
+  // normally and tapping Prepare throws ReferenceError, which is the loud, correct
+  // symptom of an unfinished feature.
+  action.onclick = () => prepareBatch(batch, action, status);
+  return card;
+}
 </script>
 </body>
 </html>
