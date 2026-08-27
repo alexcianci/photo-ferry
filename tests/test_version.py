@@ -232,6 +232,44 @@ def test_both_surfaces_are_present_and_the_gate_has_retired():
     )
 
 
+def test_the_receive_tab_label_appears_exactly_once_in_upload_html():
+    """Catches an accidental second occurrence of the label, and only that.
+
+    `_upload_html()` strips HTML comments and nothing else -- not `//` comments, not
+    JavaScript string literals -- so a second occurrence anywhere in the page keeps
+    `_missing_surfaces()` quiet even after the real tab button is deleted. The page has
+    always carried the label exactly once, but only because whoever touched it was
+    careful. Task 12 added several new user-facing strings to the receive flow, which is
+    exactly the change that makes a second one appear by accident, so the care is written
+    down here instead of assumed.
+
+    What this does NOT do, stated plainly because the alternative is a docstring that
+    overclaims: it does not stop prose from satisfying the release gate. Delete the tab
+    button and add the phrase once somewhere else -- a status message, a comment -- and
+    the count is still 1, this passes, and `_missing_surfaces()` reports a surface that no
+    longer exists. Guarding that needs the assertion anchored to the element carrying the
+    receive tab's id rather than to a bare count, which reworks a gate that has already
+    retired and pulls the surrounding tests into the change. Deferred deliberately.
+
+    Counting rather than substring-matching does remove the vacuous pass: if
+    `_upload_html()` is ever restructured so it can no longer read the page, it returns
+    something with zero occurrences and this fails, where a plain `in` check would have to
+    be read to notice it was testing nothing.
+    """
+    found = _upload_html().count(_RECEIVE_TAB_LABEL)
+    assert found == 1, (
+        f"{_RECEIVE_TAB_LABEL!r} appears {found} time(s) in upload.html; it must appear\n"
+        "exactly once, on the receive tab button itself.\n"
+        "Zero means the tab is gone and the release gate has lost the only surface it\n"
+        "can see on the phone side. Two or more is worse, because nothing goes red: the\n"
+        "gate matches a bare substring against a page from which only HTML comments have\n"
+        "been stripped, so a status message, a `//` comment or a JavaScript string\n"
+        "carrying the same words would satisfy it after the button had been deleted --\n"
+        "the gate would then be reading prose and reporting a feature.\n"
+        "Reword the new occurrence; do not relax this count."
+    )
+
+
 def test_release_gate_fires_while_either_surface_is_missing(monkeypatch):
     """The gate must fail today, and with either half alone. Proven by injecting a tag
     rather than creating one: this repo must not carry a 0.2.0 tag, not even briefly."""

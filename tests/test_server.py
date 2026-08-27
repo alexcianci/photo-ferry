@@ -299,6 +299,27 @@ def test_outbox_manifest_lists_offered_files(running_server, tmp_path):
     assert [i["name"] for i in items] == ["holiday.jpg"]
     assert items[0]["size"] == 7
     assert "path" not in items[0]
+    # `ctype` is consumed, not merely displayed: upload.html hands it to `new File(...)`
+    # as the type the iOS share sheet reads when deciding whether the group can go to the
+    # camera roll. Renamed here, every File on the phone is typed undefined -- a silent
+    # break on a device no test can reach.
+    assert items[0]["ctype"] == "image/jpeg"
+
+    # And `id` is consumed by *fetching* it, which is the only way to prove the string in
+    # the manifest is the string the download route accepts. Asserting it is merely
+    # present and truthy proves nothing twice over: it is secrets.token_urlsafe, so it can
+    # never be falsy, and a rename raises KeyError before the message ever formats.
+    # test_outbox_file_streams_bytes downloads with the Python entry's attribute, so
+    # without this the round trip the phone actually makes is untested end to end.
+    conn = connect()
+    conn.request("GET", f"/outbox/{items[0]['id']}", headers={"Cookie": cookie})
+    resp = conn.getresponse()
+    body = resp.read()
+    assert resp.status == 200, (
+        "the manifest's id does not address the file: upload.html builds its download URL\n"
+        "out of this exact string, so the phone would fetch a 404 for every offered file."
+    )
+    assert body == b"IMGDATA"
 
 
 def test_outbox_manifest_requires_token(running_server):

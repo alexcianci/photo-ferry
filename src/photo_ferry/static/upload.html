@@ -388,7 +388,21 @@ async function loadOutbox() {
   const msg = $("receive-msg");
   msg.className = "msg";
   msg.textContent = "Checking…";
+  // Revoke before blanking, while the grids are still reachable. Emptying #batches drops
+  // the <img> nodes but not the document-level object-URL entries behind them -- only
+  // revokeObjectURL frees those -- and this tab is the refresh gesture, with the empty
+  // state telling the user to tap it again. Without this, every refresh after a fallback
+  // pins another whole batch, up to MAX_BATCH_BYTES, for the life of the page.
+  for (const url of fallbackUrls.splice(0)) URL.revokeObjectURL(url);
   wrap.innerHTML = "";
+  // Every card that could be holding the prepare lock has just been destroyed, so
+  // hand it back. fetch has no timeout -- a phone roaming off Wi-Fi mid-stream is
+  // enough -- and without this the run that will never settle keeps the lock for the
+  // life of the page, so every Prepare refuses even once the tab is refreshing fine.
+  // Safe to clear unconditionally only because the release in prepareBatch checks
+  // ownership: that abandoned run will find the lock has moved on and will not free
+  // one a later prepare has since taken.
+  prepareLock = 0;
   // Not the module-level `items`: that one is the send-side selection. This is the
   // outbox manifest, a fresh array of { id, name, size, ctype } straight off GET /outbox.
   let manifest;
@@ -433,13 +447,270 @@ function batchCard(batch, index) {
   status.className = "msg";
 
   card.append(title, size, action, status);
-  // prepareBatch() arrives in Task 12, which fetches each file in the batch and hands
-  // the group to the Web Share API. Deliberately not stubbed: a no-op stub would
-  // silently swallow the wiring this line exists for. Until it lands the card renders
-  // normally and tapping Prepare throws ReferenceError, which is the loud, correct
-  // symptom of an unfinished feature.
+  // Two taps by design. This one only prepares: prepareBatch fetches every file in the
+  // group, then rebinds this same button to the share, which a second tap performs.
+  // See prepareBatch for why the two halves cannot be one.
   action.onclick = () => prepareBatch(batch, action, status);
   return card;
+}
+
+// One prepare at a time, page-wide. What that bounds is *fetching*: the phone is never
+// pulling three batches off the PC at once, so MAX_BATCH_BYTES stays the ceiling on a
+// transfer. That batch-level claim is exact -- an abandoned loop advances no further than
+// the one file it is parked on. The request-level claim is not: loadOutbox frees the lock
+// while such a loop is still awaiting its current fetch, so a new prepare can run
+// alongside one stray single-file request, and one more per tab-tap-then-prepare cycle.
+// That is the abandonment already accepted above, not a case for an AbortController.
+//
+// It does NOT bound resident memory, which is the easy thing to misread it as doing.
+// The lock releases the moment the fetches finish, while a prepared-but-unshared
+// card keeps its whole batch alive in the closure on its button -- so preparing three
+// cards one after another, which is the more natural interaction, still holds three
+// batches. Bounding that means evicting other cards' prepared blobs: a behaviour change,
+// and a separate task from this one.
+//
+// A serial, not a boolean, for the same reason outboxRun is one. fetch has no timeout, so
+// a phone that roams off Wi-Fi mid-stream leaves a fetch that never settles; under a
+// boolean the finally never ran, the flag stayed set, and every Prepare on the page
+// refused for the life of the tab. A stall used to cost one card. It must not cost all.
+//
+// Invariant, and the property the whole scheme rests on: a nonzero prepareLock always
+// belongs to a card that is still on screen. Cards are destroyed in exactly one place --
+// `wrap.innerHTML = ""` in loadOutbox -- and the line after it hands the lock back in the
+// same synchronous block, so a held lock is never an orphan.
+let prepareRun = 0;
+let prepareLock = 0;   // the run number holding the lock, 0 when free
+
+// Every object URL the fallback grids are currently holding open. Dropping an <img> does
+// not release its entry; the registry is document-level and only revokeObjectURL frees
+// it. See loadOutbox for why that bites hardest here.
+const fallbackUrls = [];
+
+function dropFallbackGrid(grid) {
+  // Only this grid's URLs, never the whole list: another card may still be showing its
+  // own grid, and revoking its blobs would blank those images out from under it.
+  for (const url of grid.urls || []) {
+    URL.revokeObjectURL(url);
+    const at = fallbackUrls.indexOf(url);
+    if (at !== -1) fallbackUrls.splice(at, 1);
+  }
+  grid.remove();
+}
+
+// Spelled once because it rides on four different lines -- Ready, Saved, the dismissed
+// sheet, and the fallback. A group that quietly comes up short is the whole failure this
+// wording exists to prevent, so no branch gets to forget it.
+function skipNote(skipped) {
+  return skipped ? ` ${skipped} no longer available and skipped.` : "";
+}
+
+// Step one of two, and the split is not cosmetic: navigator.share() only runs inside a
+// user gesture, and awaiting the fetches spends the one that got us here -- by the time
+// the last blob lands, the tap is over and iOS refuses the share. So this tap does the
+// fetching and rebinds the button, and the share happens on the next one, synchronously.
+async function prepareBatch(batch, btn, status) {
+  if (prepareLock) {
+    // By the invariant on prepareLock, the group being waited on is a card the user can
+    // still see, so this is never a refusal on behalf of something gone from the screen.
+    // The wording stays generic all the same: naming the group would mean plumbing a
+    // label from batchCard down to here, and it is a wait, not an instruction.
+    status.className = "msg";
+    status.textContent = "Still finishing the previous group — try again in a moment.";
+    return;
+  }
+  let run = 0;
+  try {
+    // First statement inside the try, so the release below cannot be stranded by anything
+    // between taking the lock and the guard -- robust by construction, rather than by
+    // checking that nothing in between throws.
+    run = prepareLock = ++prepareRun;
+    btn.disabled = true;
+    status.className = "msg";
+    const files = [], failed = [];
+    for (let i = 0; i < batch.length; i++) {
+      // The card can be torn out from under this loop. Tapping the receive tab reloads
+      // the manifest and blanks #batches, which detaches this button -- and carrying on
+      // would write progress into a node nobody can see, then re-enable and rebind a
+      // detached button whose closure pins the whole batch, while the freshly rendered
+      // card offers a live Prepare for bytes already in flight. It is the hazard the
+      // outboxRun counter answers for loadOutbox, asked once per card.
+      //
+      // The fetch already in flight is abandoned, not cancelled: its bytes arrive and
+      // are dropped. Deliberate -- an AbortController is a larger change than this needs
+      // -- and recorded here so the next reader does not read it as an oversight.
+      if (!btn.isConnected) return;
+      status.textContent = `Preparing ${i + 1} of ${batch.length}…`;
+      try {
+        const r = await fetch(`/outbox/${encodeURIComponent(batch[i].id)}`);
+        if (!r.ok) throw new Error(String(r.status));
+        const blob = await r.blob();
+        files.push(new File([blob], batch[i].name, { type: batch[i].ctype }));
+      } catch {
+        // One file deleted on the PC mid-transfer must not sink the whole group.
+        failed.push(batch[i]);
+      }
+    }
+    if (!btn.isConnected) return;
+    if (!files.length) {
+      // The one outcome a retry can fix, so the one place the button comes back.
+      btn.disabled = false;
+      status.className = "msg err";
+      status.textContent = "Couldn't load that group. Try again.";
+      return;
+    }
+    if (!(navigator.canShare && navigator.canShare({ files }))) {
+      // Deliberately ahead of the Ready line below: saveIndividually writes its own copy,
+      // skip count folded in, and settles the button itself.
+      saveIndividually(files, btn, status, failed.length);
+      return;
+    }
+    status.textContent = "Ready." + skipNote(failed.length);
+    btn.disabled = false;
+    btn.textContent = files.length === 1 ? "Save to Photos" : `Save ${files.length} to Photos`;
+    btn.onclick = () => shareBatch(files, btn, status, failed.length);
+  } finally {
+    // Ownership rule, and it is the non-obvious part: release only the lock we still hold.
+    // loadOutbox hands the lock back when it destroys the cards, so a run abandoned by a
+    // tab refresh can settle long afterwards, by which time a NEW prepare may own it. An
+    // unconditional clear here would unlock that one while its fetches are still running.
+    if (prepareLock === run) prepareLock = 0;
+  }
+}
+
+function shareBatch(files, btn, status, skipped) {
+  status.className = "msg";
+  try {
+    // No second share while this one is pending. A concurrent call rejects with
+    // InvalidStateError, which lands in the failure branch below and renders a fallback
+    // grid under a share that is still going to succeed -- leaving "Saved." sitting above
+    // a grid telling the user to save each image by hand.
+    btn.disabled = true;
+    // Called synchronously inside the tap so the user gesture is still valid.
+    // Files only: adding title or text degrades the iOS share sheet.
+    //
+    // Two-argument then rather than .then().catch(): a throw inside the success handler
+    // must not come back as a failed share and be answered with a fallback grid.
+    navigator.share({ files }).then(
+      () => {
+        // Carries the skip count too. Without it the user reads the notice, taps Save,
+        // gets "Saved.", and concludes the whole group arrived -- the silent shortfall
+        // that notice exists to prevent, one branch away from where it is written.
+        status.textContent = "Saved." + skipNote(skipped);
+        // Drop the handler with it. The closure holds the whole batch, and a disabled
+        // button would keep those blobs alive for as long as the card is on screen.
+        btn.onclick = null;
+        btn.textContent = "Saved";
+      },
+      (err) => {
+        if (err && err.name === "AbortError") {
+          // The user simply dismissed the sheet, so put the button back as it was: the
+          // share is still on offer.
+          //
+          // The status is deliberately not restored verbatim, and the ternary is not a
+          // missed simplification to "Ready." + skipNote(skipped). With nothing skipped
+          // this line has always gone blank on a dismiss -- the quiet answer to a
+          // deliberate cancel -- and only the skip notice is worth saying a second time.
+          status.textContent = skipped ? "Ready." + skipNote(skipped) : "";
+          btn.disabled = false;
+          return;
+        }
+        // iOS 16.2-16.4 lands here: the sheet offered no way to save to Photos. Older
+        // WebKit also reports a plain cancel as a generic Error rather than AbortError,
+        // so this runs with nothing actually wrong.
+        saveIndividually(files, btn, status, skipped);
+      },
+    );
+  } catch {
+    // canShare answered yes but share threw synchronously, so no promise was ever
+    // created and neither handler above can run. Without this the card wedges: button
+    // stuck, status blank, no grid, nothing said.
+    saveIndividually(files, btn, status, skipped);
+  }
+}
+
+// Fallback for iOS 16.2-16.4, where the share sheet offers only "Save to Files", and
+// for any browser where canShare says no.
+//
+// NOT a second pipeline: it renders the blobs this batch already fetched. Nothing goes
+// back to the server, and there is no alternate route to maintain. Rendering real <img>
+// elements is the whole point -- long-press on an image gives "Add to Photos", which is
+// the only per-item path to the camera roll that iOS offers a web page.
+//
+// It renders THE grid for this card, never another one. Nothing calls it twice today:
+// every terminal path kills the button, and shareBatch disables it for the duration of the
+// share, which closed the concurrent-share race that used to reach here. The guard stays
+// anyway, because status.after() inserts as the next sibling -- a second call would sit
+// the new grid ABOVE the old one with both still pinning their blobs, and that failure
+// shows up only as memory. Insurance against a future caller, not a live path.
+function saveIndividually(files, btn, status, skipped) {
+  // Reachable detached by way of the share: the sheet can be open across a tab tap, and
+  // the rejection then arrives after loadOutbox has thrown the card away. Building the
+  // grid at that point pins one object URL per file into a document nobody can see. A
+  // no-op on the prepare path, which has just checked the same thing.
+  if (!btn.isConnected) return;
+  // The grid is the finished product, so the button has nothing left to offer: left live
+  // it re-fetches the whole group on one path and re-offers an already-failed share on
+  // the other. Clearing the handler releases the batch its closure pinned.
+  btn.disabled = true;
+  btn.onclick = null;
+  btn.textContent = "Prepared";
+
+  const previous = status.nextElementSibling;
+  if (previous && previous.classList.contains("fallback")) dropFallbackGrid(previous);
+
+  status.className = "msg";
+  // Says what happened, not why. This also serves any browser whose canShare says no,
+  // and the page is just an HTTPS URL on the LAN, so a laptop can open it: "Update iOS"
+  // would be wrong advice there, for a menu that browser does not have. The iOS version
+  // detail already stands in the note under the card list.
+  //
+  // "each image", not "each item": long press offers Add to Photos for images only.
+  //
+  // The clause below describes the CELL, not a file type. It shares the grid's own rule --
+  // a cell is a link iff its type is not image/* -- so the copy and the rendering cannot
+  // disagree. It deliberately does not say "videos": a still image can land in that branch
+  // too, because mimetypes can fail to resolve an allowed extension, the server then
+  // offers the file as application/octet-stream (which the media allowlist tolerates on
+  // purpose), and the phone types the File the same way. Calling that a video is wrong on
+  // a page whose whole job is moving photos.
+  const linked = files.filter((f) => !f.type.startsWith("image/")).length;
+  status.textContent =
+    "This browser can't hand the whole group to Photos. On iPhone, press and hold each " +
+    "image below and choose Add to Photos." +
+    (linked ? " Items shown as a link have to be downloaded instead." : "") +
+    skipNote(skipped);
+
+  const grid = document.createElement("div");
+  grid.className = "fallback";
+  // The URLs this grid holds, so superseding it revokes exactly these.
+  grid.urls = [];
+  for (const file of files) {
+    // `cell`, not `item`: `item` is a manifest entry in buildBatches, and this file has
+    // already paid once for letting the two directions share a name.
+    const cell = document.createElement("figure");
+    cell.className = "fallback-item";
+    const url = URL.createObjectURL(file);
+    grid.urls.push(url);
+    fallbackUrls.push(url);
+    if (file.type.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = file.name;
+      cell.appendChild(img);
+    } else {
+      // Not an image, so long press offers no Add to Photos: give it a real download.
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      link.textContent = "Download " + file.name;
+      cell.appendChild(link);
+    }
+    const caption = document.createElement("figcaption");
+    caption.textContent = file.name;
+    cell.appendChild(caption);
+    grid.appendChild(cell);
+  }
+  status.after(grid);
 }
 </script>
 </body>
