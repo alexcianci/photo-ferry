@@ -156,7 +156,11 @@ class ReceiverWindow:
             self.offer(paths)
 
     def offer(self, paths) -> None:
-        """Register paths and refresh the list. Silently skips non-media and repeats.
+        """The single intake seam for outgoing files: register paths and refresh the
+        list, silently skipping non-media and repeats.
+
+        Every way of adding files goes through here: today only the picker, and if
+        drag-and-drop returns it becomes a second caller and changes nothing else.
 
         Add-only by design. Outbox.remove()/clear() do not revoke an in-flight stream --
         after clear() an already-open response still delivered the whole file -- so no

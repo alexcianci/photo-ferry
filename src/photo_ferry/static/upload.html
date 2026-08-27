@@ -122,6 +122,23 @@
   .xmark { color: var(--danger); }
   @keyframes pop { 0% { transform: scale(0.3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
+  .tabs { display: flex; gap: 6px; margin: 22px 0 4px;
+          background: var(--surface-2); padding: 4px; border-radius: 999px; }
+  .tab { flex: 1; margin: 0; padding: 11px 10px; font-size: 15px; font-weight: 600;
+         border-radius: 999px; background: transparent; color: var(--muted); }
+  .tab.active { background: var(--surface); color: var(--text); }
+
+  .batch { border: 1px solid var(--hairline); border-radius: var(--radius);
+           padding: 14px 16px; margin-top: 12px; }
+  .batch h2 { font-size: 16px; font-weight: 650; margin: 0 0 4px; }
+  .batch .size { font-size: 13px; color: var(--muted); }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 14px 2px 0; }
+  .fallback { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 14px; }
+  .fallback-item { margin: 0; }
+  .fallback-item img { width: 100%; border-radius: 12px; display: block; }
+  .fallback-item figcaption { font-size: 12px; color: var(--muted); margin-top: 4px;
+                              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
   .hidden { display: none !important; }
   footer { margin-top: 30px; text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
   footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
@@ -132,6 +149,12 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
     Local &amp; encrypted
   </span>
+
+  <!-- Direction switch -->
+  <nav id="tabs" class="tabs hidden">
+    <button id="tab-send" class="tab active">Send to PC</button>
+    <button id="tab-receive" class="tab">Get from PC</button>
+  </nav>
 
   <!-- PIN gate -->
   <section id="pin-screen">
@@ -160,6 +183,21 @@
 
     <button id="publish" class="hidden">Publish</button>
     <button id="more" class="ghost hidden">Select more</button>
+  </section>
+
+  <!-- Receive -->
+  <section id="receive-screen" class="hidden">
+    <header>
+      <h1>Get from your PC</h1>
+      <p class="sub">Photos your PC is offering. Prepare a group, then save it straight to
+        your camera roll.</p>
+    </header>
+
+    <div id="batches"></div>
+    <p id="receive-msg" class="msg"></p>
+
+    <p class="note">Saving to Photos needs iOS 16.5 or later. On older versions the share
+      sheet only offers &ldquo;Save to Files&rdquo;.</p>
   </section>
 
   <footer>
@@ -199,7 +237,8 @@ $("unlock").onclick = async () => {
     });
     if (r.ok) {
       $("pin-screen").classList.add("hidden");
-      $("upload-screen").classList.remove("hidden");
+      $("tabs").classList.remove("hidden");
+      showTab("send");
       return;
     }
     if (r.status === 423) $("pin-msg").textContent = "Too many tries. The receiver shut down; restart it on your PC.";
@@ -292,6 +331,21 @@ $("publish").onclick = async () => {
   $("more").disabled = false;
   render();
 };
+
+// --- Tabs ---
+function showTab(which) {
+  const send = which === "send";
+  $("upload-screen").classList.toggle("hidden", !send);
+  $("receive-screen").classList.toggle("hidden", send);
+  $("tab-send").classList.toggle("active", send);
+  $("tab-receive").classList.toggle("active", !send);
+  // loadOutbox() arrives in Task 11, which fetches the manifest. Deliberately not
+  // stubbed here: a no-op stub would silently swallow the wiring this line exists for.
+  // Until it lands, tapping the receive tab throws ReferenceError and that screen stays empty.
+  if (!send) loadOutbox();
+}
+$("tab-send").onclick = () => showTab("send");
+$("tab-receive").onclick = () => showTab("receive");
 </script>
 </body>
 </html>

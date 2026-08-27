@@ -25,19 +25,22 @@ The gate originally asked whether `photo_ferry.outbox` was importable, and Phase
 answered that -- which retired it silently, with nothing failing to say so. Worse, it
 retired early: `find_spec` resolves against the file on disk under an editable install,
 so the gate went quiet the moment outbox.py was written, before it was ever committed.
-Server routes are not a shipped feature either. Nothing in the desktop app offers a file
-and nothing on the phone asks for one, so the outbox today is reachable and permanently
-empty. The gate therefore now asks for the two surfaces that are still absent: the send
-intake caller in ui.py (Phase 3, Task 8) and the receive tab in upload.html (Phase 4,
-Task 10). Both are asserted against source on disk, with whole-line comments stripped, for
-the same reason as tests/test_protected_identifiers.py -- a comment naming the seam must
-not be able to satisfy the assertion that the seam exists.
+Server routes were not a shipped feature either: while nothing in the desktop app offered
+a file and nothing on the phone asked for one, the outbox was reachable and permanently
+empty. So the gate was rebuilt to ask instead for the two surfaces that turn those routes
+into a feature -- the send intake caller in ui.py (Phase 3, Task 8) and the receive tab in
+upload.html (Phase 4, Task 10). Both have since landed, the receive tab on 2026-08-27, so
+the gate is permanently silent again; the difference this time is that a test says so out
+loud instead of the silence passing unremarked. Both surfaces are asserted against source
+on disk, with whole-line comments stripped, for the same reason as
+tests/test_protected_identifiers.py -- a comment naming the seam must not be able to
+satisfy the assertion that the seam exists.
 
-This gate goes quiet again when Phase 4 lands, and that is by design: at that point every
-artifact it can see is present. What it can never see is the on-device run, which leaves
-nothing in the repo and is deliberately neither asserted here nor faked with a marker
-file. That half stays a human check, and once Phase 4 is in it is the only thing left
-between a green suite and a tag that should not exist yet.
+That second silence is by design: every artifact the gate can see is now present. What it
+can never see is the on-device run, which leaves nothing in the repo and is deliberately
+neither asserted here nor faked with a marker file. That half stays a human check, and now
+that Phase 4 has landed it is the only thing left between a green suite and a tag that
+should not exist yet.
 """
 import importlib.metadata
 import re
@@ -193,31 +196,39 @@ def test_0_2_0_is_not_tagged_before_the_feature_is_shippable():
     )
 
 
-def test_the_gate_has_not_retired_silently():
-    """Exactly one surface is still outstanding in the real tree today.
+def test_both_surfaces_are_present_and_the_gate_has_retired():
+    """The gate retired here: with both surfaces on disk it can never fire again.
 
-    The scenario table below runs entirely on literals, so this is the only assertion
-    left watching the actual source. Task 8 landed the intake caller in ui.py, leaving
-    the receive tab in upload.html as the last missing half. When Phase 4 lands this
-    goes empty and the gate retires -- which is by design, but must not happen
-    unnoticed: the previous find_spec gate went quiet the moment outbox.py was written,
-    before it was ever committed, and nothing failed to announce it. Updating this test
-    is the acknowledgement that the retirement was deliberate.
+    Phase 4 Task 10 landed the receive tab in upload.html on 2026-08-27, joining the
+    send intake caller Task 8 put in ui.py. `_missing_surfaces()` has returned [] ever
+    since, so the release gate is permanently silent -- by design, and recorded here
+    deliberately rather than discovered later. Its predecessor, the find_spec check,
+    retired unannounced the moment outbox.py was written; this test is the fix for that,
+    so it inverts rather than disappears. It now pins the two surfaces as present instead
+    of counting the ones still missing, and goes red if either is refactored back out.
 
-    Asserted on which surface is missing rather than on the wording of the message, so
-    rewording _missing_surfaces() cannot fail here with a confidently wrong diagnosis.
+    What the retirement does NOT mean is that 0.2.0 is clearable. The on-device run has
+    still not happened, and it is mechanized nowhere -- not in this file, not in CI
+    (there is none), and deliberately not behind a marker file, because an artifact a
+    script can write is an artifact a script can write with no iPhone in the room. Phase
+    4 Task 14 is that run. Until it is done, a fully green suite means the source tree is
+    consistent, not that the release is shippable -- and nothing mechanical stops a 0.2.0
+    tag any more, so the judgement is now entirely a human one.
     """
     assert _SEND_INTAKE_CALL in _ui_code(), (
-        f"{_SEND_INTAKE_CALL!r} vanished from ui.py -- Outbox.add has no caller again, "
-        "so both routes are reachable and permanently empty."
+        f"{_SEND_INTAKE_CALL!r} vanished from ui.py -- Outbox.add has no caller again,\n"
+        "so nothing on the desktop side offers a file and both routes are reachable and\n"
+        "permanently empty. Restore the send intake, or this half of 0.2.0 does not exist."
     )
-    missing = _missing_surfaces()
-    assert [m for m in missing if "upload.html" in m] == missing, (
-        f"an unexpected surface is missing: {missing}"
+    assert _RECEIVE_TAB_LABEL in _upload_html(), (
+        f"{_RECEIVE_TAB_LABEL!r} vanished from upload.html -- the receive tab is gone\n"
+        "from the phone page, so nothing on the phone can ask the PC for a file and the\n"
+        "outbox is unreachable from the only client that exists."
     )
-    assert len(missing) == 1, (
-        f"the gate's real-tree state moved: {missing}. If Phase 4 landed, the gate has "
-        "retired on purpose -- confirm that on device, then update this test."
+    assert _missing_surfaces() == [], (
+        "the gate still reports a missing surface that the two assertions above did\n"
+        f"not catch: {_missing_surfaces()}. _missing_surfaces() and this test have\n"
+        "drifted apart -- fix them together; they are meant to read the same two literals."
     )
 
 
@@ -233,7 +244,7 @@ def test_release_gate_fires_while_either_surface_is_missing(monkeypatch):
     # row below into both-surfaces-present, where the gate correctly stays silent and
     # the pytest.raises failed with DID NOT RAISE. A scenario table that reads the tree
     # it is testing stops being a table of scenarios the moment the tree moves. Watching
-    # the real tree is test_the_gate_has_not_retired_silently's job instead.
+    # the real tree is the job of test_both_surfaces_are_present_and_the_gate_has_retired.
     no_ui = "class ReceiverWindow:\n    def offer(self, paths):\n        pass\n"
     no_html = "<button class='tab'>Send to PC</button>"
 

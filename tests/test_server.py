@@ -872,3 +872,14 @@ def test_download_stalled_past_the_transfer_deadline_is_a_quiet_disconnect(cert_
         except (OSError, http.client.HTTPException):
             rest = b""
         assert len(head) + len(rest) < len(payload), "the transfer deadline never fired"
+
+
+def test_page_offers_both_directions(running_server):
+    session, connect, _outbox = running_server
+    conn = connect()
+    conn.request("GET", f"/?t={session.token}")
+    resp = conn.getresponse()
+    assert resp.status == 200
+    body = resp.read()
+    assert b"Send to PC" in body
+    assert b"Get from PC" in body
