@@ -1,7 +1,8 @@
 """Desktop control window: shows the QR + pairing code, lists received files, Stop.
 
-A calm, dark control surface matching the phone page: tinted near-black neutrals,
-one green accent, a white card behind the QR so it stays scannable.
+Transit signage, matching the phone page: a deep navy ground, one warm orange accent
+used only as a fill, wide-tracked uppercase labels, and a white card behind the QR so
+it stays scannable regardless of the surrounding theme.
 """
 from __future__ import annotations
 
@@ -16,16 +17,38 @@ from . import net, qr
 from .outbox import Outbox
 from .server import ReceiverServer
 
-# Palette: exact sRGB conversions of the phone page's OKLCH tokens, so the desktop
-# window and the mobile page render the same colors.
-BG = "#0b110d"
-SURFACE = "#141b17"
-TEXT = "#eff3f0"
-MUTED = "#99a19b"
-HAIRLINE = "#2e3530"
-ACCENT = "#61da92"
-ON_ACCENT = "#0a1a10"
-DANGER = "#ef6661"
+# Transit-signage palette. Deliberately no bundled typeface, no webfont and no Google
+# Fonts: the signage feel comes from weight, size and letterspacing on the system stack
+# already in use. Every pairing below is asserted in tests/test_palette.py, and the
+# comments record the measured ratios that constrain usage.
+BG = "#17324D"          # base background
+SURFACE = "#203B55"     # elevated surfaces
+HAIRLINE = "#35506A"    # DECORATIVE DIVIDERS ONLY - 1.57:1 on BG, never a boundary
+OUTLINE = "#7396B8"     # interactive boundaries - 4.24:1 on BG, 3.73:1 on SURFACE
+TEXT = "#F7F4ED"        # primary - 11.95:1 on BG, 10.51:1 on SURFACE
+TEXT_2 = "#C5CCD1"      # secondary - 8.08 / 7.11; the only muted tone allowed on SURFACE
+MUTED = "#8E9AA3"       # tertiary - 4.56 on BG but 4.02 on SURFACE, so BG only here. The
+                        # page also allows it on its recessed track (5.66), which the Tk
+                        # window has no counterpart for.
+ACCENT = "#E86A33"      # buttons, focus rings, highlights - NEVER body or label text
+ACCENT_PRESS = "#D95B27"
+ON_ACCENT = "#17324D"   # navy on orange, 4.09:1 - large text only, see BUTTON_FONT_PT
+DANGER = "#FF8A7A"      # the brief supplies no error tone; 5.73 on BG, 5.04 on SURFACE
+
+# Button label type is load-bearing for contrast, not taste. ON_ACCENT on ACCENT is
+# 4.09:1 and 3.42:1 on ACCENT_PRESS, both under the 4.5 normal-text floor and clearing
+# only the 3:1 large-text floor. 14pt bold is exactly WCAG's large-text threshold, and
+# is the same threshold the phone page meets as 19px at weight 700. Shrinking or
+# lightening either one drops the button below its floor, so both are asserted in
+# tests/test_palette.py.
+BUTTON_FONT_PT = 14
+BUTTON_FONT_WEIGHT = "bold"
+
+
+def tracked(text: str) -> str:
+    """Tk cannot set letter-spacing, so widen tracking by inserting gaps. The pairing
+    code display already does this; signage labels reuse it."""
+    return " ".join(text)
 
 
 def human_size(n: int) -> str:
@@ -72,14 +95,24 @@ class ReceiverWindow:
         wrap.pack(padx=pad, pady=(20, 22))
 
         f_chip = tkfont.Font(family="Segoe UI", size=9, weight="bold")
-        f_h1 = tkfont.Font(family="Segoe UI Semibold", size=17)
+        f_h1 = tkfont.Font(family="Segoe UI Semibold", size=19)
         f_sub = tkfont.Font(family="Segoe UI", size=10)
         f_label = tkfont.Font(family="Segoe UI", size=9, weight="bold")
         f_pin = tkfont.Font(family="Consolas", size=30, weight="bold")
         f_status = tkfont.Font(family="Segoe UI", size=10)
         f_list = tkfont.Font(family="Consolas", size=10)
+        # The one control that has to read as a button. Spelled from the constants and
+        # never from literals, because tests/test_palette.py asserts on the constants:
+        # inlining 14/"bold" here would leave the assertion checking nothing this window
+        # actually renders.
+        f_button = tkfont.Font(family="Segoe UI", size=BUTTON_FONT_PT,
+                               weight=BUTTON_FONT_WEIGHT)
 
-        tk.Label(wrap, text="●  LOCAL & ENCRYPTED", font=f_chip, fg=MUTED, bg=BG).pack(anchor="w")
+        # tracked() covers the words only. Passing the whole string would space the
+        # bullet and the two gaps after it as well, giving a five-space gutter before
+        # the first letter.
+        tk.Label(wrap, text="●  " + tracked("LOCAL & ENCRYPTED"), font=f_chip,
+                 fg=MUTED, bg=BG).pack(anchor="w")
         tk.Label(wrap, text="Scan to connect", font=f_h1, fg=TEXT, bg=BG).pack(anchor="w", pady=(12, 2))
         tk.Label(wrap, text="Point your iPhone camera at the code.", font=f_sub,
                  fg=MUTED, bg=BG).pack(anchor="w", pady=(0, 16))
@@ -91,33 +124,63 @@ class ReceiverWindow:
         card.pack()
         tk.Label(card, image=self._qr_img, bg="#ffffff", bd=0).pack(padx=12, pady=12)
 
-        tk.Label(wrap, text="PAIRING CODE", font=f_label, fg=MUTED, bg=BG).pack(anchor="center", pady=(18, 2))
+        tk.Label(wrap, text=tracked("PAIRING CODE"), font=f_label, fg=MUTED, bg=BG).pack(anchor="center", pady=(18, 2))
+        # Wider tracking than tracked() gives, and left alone on purpose: six digits read
+        # one at a time need more air than a word does.
         spaced = "  ".join(pin)
+        # The one place accent carries glyphs. 4.09:1 on BG is under the 4.5 normal-text
+        # floor but over the 3:1 large-text floor, and 30pt bold is far above WCAG's
+        # large-text threshold, so this clears. Shrinking it would not.
         tk.Label(wrap, text=spaced, font=f_pin, fg=ACCENT, bg=BG).pack(anchor="center")
 
         self.status = tk.Label(wrap, text="Waiting for photos…", font=f_status, fg=MUTED, bg=BG)
         self.status.pack(anchor="center", pady=(14, 10))
 
-        # Received-files list.
-        list_wrap = tk.Frame(wrap, bg=HAIRLINE, bd=0)
+        # Received-files list. This 1px frame is the listbox's border, and a listbox is an
+        # interactive component, so it takes OUTLINE (4.24:1 on BG) and not HAIRLINE.
+        # HAIRLINE is 1.57:1 and fails the 3:1 non-text floor everywhere; it is legal only
+        # on the plain divider further down.
+        list_wrap = tk.Frame(wrap, bg=OUTLINE, bd=0)
         list_wrap.pack(fill="x")
         self.listbox = tk.Listbox(
             list_wrap, height=6, width=40, font=f_list, bd=0, highlightthickness=0,
-            bg=SURFACE, fg=TEXT, selectbackground=SURFACE, selectforeground=ACCENT,
+            # selectforeground was ACCENT, which made the selected row body text at
+            # 3.60:1 on SURFACE -- under the 4.5 normal-text floor, and the exact
+            # accent-as-text usage the palette forbids. TEXT is 10.51:1 and the
+            # selection still reads, because selectbackground differs from the row fill.
+            bg=SURFACE, fg=TEXT, selectbackground=SURFACE, selectforeground=TEXT,
             activestyle="none",
         )
         self.listbox.pack(fill="x", padx=1, pady=1)
 
+        # The border is a wrapping Frame, not an option on the Button, because
+        # `highlightbackground` is INERT on tk.Button here. Measured by reading the
+        # rendered pixels back through GDI: with bd=1, relief="solid" and
+        # highlightbackground=OUTLINE the outermost row and column come back #000000 --
+        # no #7396B8 pixel anywhere on the widget -- and at highlightthickness=2 the
+        # Button reserves the 2px and paints none of it. The identical option on the
+        # tk.Frame below does paint #7396B8, so the option works on Frame and does
+        # nothing on Button on this platform.
+        #
+        # That matters because the fallback Tk draws instead is the relief="solid"
+        # border in pure black: 1.60:1 on BG, marginally WORSE than the 1.57:1 HAIRLINE
+        # it looked like it was replacing. The button's fill is BG, identical to the
+        # page behind it, so this border is the only thing identifying it as a control.
+        # Same wrapper pattern as the listbox above, and for the same reason.
+        stop_wrap = tk.Frame(wrap, bg=OUTLINE, bd=0)
+        stop_wrap.pack(pady=(14, 0), fill="x")
         self.stop_btn = tk.Button(
-            wrap, text="Stop receiving", font=f_status, command=self.stop,
+            stop_wrap, text="Stop receiving", font=f_status, command=self.stop,
             fg=MUTED, bg=BG, activebackground=SURFACE, activeforeground=TEXT,
-            bd=1, relief="solid", highlightbackground=HAIRLINE, cursor="hand2",
+            bd=0, relief="flat", highlightthickness=0, cursor="hand2",
             padx=14, pady=7,
         )
-        self.stop_btn.pack(pady=(14, 0), fill="x")
+        self.stop_btn.pack(fill="x", padx=1, pady=1)
 
+        # Decorative rule between the two halves of the window, and the only place
+        # HAIRLINE is legal: it separates nothing interactive and carries no state.
         tk.Frame(wrap, bg=HAIRLINE, height=1).pack(fill="x", pady=(18, 14))
-        tk.Label(wrap, text="SEND TO IPHONE", font=f_label, fg=MUTED, bg=BG).pack(anchor="w")
+        tk.Label(wrap, text=tracked("SEND TO IPHONE"), font=f_label, fg=MUTED, bg=BG).pack(anchor="w")
 
         self.send_hint = tk.Label(
             wrap, text="Add photos, then open “Get from PC” on your phone.",
@@ -127,24 +190,35 @@ class ReceiverWindow:
 
         self.outbox_list = tk.Listbox(
             wrap, height=4, width=40, font=f_list, bd=0, highlightthickness=0,
-            bg=SURFACE, fg=TEXT, selectbackground=SURFACE, selectforeground=ACCENT,
+            # Same reason as the received list above: accent may not be row text.
+            bg=SURFACE, fg=TEXT, selectbackground=SURFACE, selectforeground=TEXT,
             activestyle="none",
         )
         self.outbox_list.pack(fill="x")
 
         # Styled as a drop zone even though nothing can be dropped on it yet: it reads as
         # the place files go, and it is already the right shape if DnD returns later.
+        # OUTLINE, not HAIRLINE: the whole frame is clickable, so its edge is an
+        # interactive boundary and owes the 3:1 non-text floor.
         self.drop_zone = tk.Frame(
-            wrap, bg=SURFACE, highlightbackground=HAIRLINE, highlightthickness=1,
+            wrap, bg=SURFACE, highlightbackground=OUTLINE, highlightthickness=1,
             cursor="hand2",
         )
         self.drop_zone.pack(fill="x", pady=(10, 0))
+        # A glyph used as an icon, not as text, so the 3:1 non-text floor applies and
+        # 3.60:1 on SURFACE clears it. The phone page's check icon and spinner keep the
+        # accent for the same reason.
         tk.Label(self.drop_zone, text="+", font=tkfont.Font(family="Segoe UI", size=20),
                  fg=ACCENT, bg=SURFACE).pack(pady=(14, 0))
-        tk.Label(self.drop_zone, text="Choose photos or videos", font=f_status,
-                 fg=TEXT, bg=SURFACE).pack()
+        # The picker's action label: the one filled control on this window, so it wears
+        # the accent as a fill with the navy label on top. That pairing is 4.09:1, which
+        # is legal only as large text, which is what f_button (14pt bold) buys.
+        tk.Label(self.drop_zone, text="Choose photos or videos", font=f_button,
+                 fg=ON_ACCENT, bg=ACCENT).pack(pady=(10, 0), ipadx=14, ipady=8)
+        # TEXT_2, not MUTED: this label sits on SURFACE, where MUTED is 4.02:1 and fails
+        # the normal-text floor. MUTED is legal on BG only.
         tk.Label(self.drop_zone, text="They stay on this PC until your phone asks for them",
-                 font=f_sub, fg=MUTED, bg=SURFACE, wraplength=280).pack(pady=(2, 14))
+                 font=f_sub, fg=TEXT_2, bg=SURFACE, wraplength=280).pack(pady=(8, 14))
         for widget in (self.drop_zone, *self.drop_zone.winfo_children()):
             widget.bind("<Button-1>", lambda _e: self.add_files())
 
@@ -204,10 +278,14 @@ class ReceiverWindow:
         # exactly 25 items still travel as a single group and need no warning. 26 is the
         # first count iOS has to split, which is where the grouping hint belongs.
         if total > self.max_batch_files:
+            # Promoted from MUTED to TEXT rather than to ACCENT. This is 10pt regular --
+            # normal text -- and accent on BG is 4.09:1, under the 4.5 floor, so an
+            # accent hint would be the palette's own forbidden pairing. Going to primary
+            # still reads as "this line changed", at 11.95:1.
             self.send_hint.config(
                 text=f"{total} items. iOS saves one batch at a time — "
                      "your phone will show these in groups.",
-                fg=ACCENT,
+                fg=TEXT,
             )
 
     def _set_window_icon(self) -> None:
@@ -251,7 +329,10 @@ class ReceiverWindow:
         if len(received) != self._seen:
             self._seen = len(received)
             word = "photo" if self._seen == 1 else "photos"
-            self.status.config(text=f"{self._seen} {word} received", fg=ACCENT)
+            # TEXT, not ACCENT, for the same reason as the send hint: this is 10pt
+            # regular text and accent on BG is 4.09:1. The palette has no success tone,
+            # so the signal is the jump from MUTED to primary rather than a hue change.
+            self.status.config(text=f"{self._seen} {word} received", fg=TEXT)
         elif self._firewall_ok is False and self._seen == 0:
             self.status.config(
                 text="⚠  Firewall rule missing — re-run setup so your phone can connect",

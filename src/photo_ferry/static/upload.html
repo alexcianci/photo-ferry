@@ -3,38 +3,37 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="light dark" />
+<meta name="color-scheme" content="dark" />
 <title>Photo Ferry</title>
 <style>
+  /* Transit-signage palette, hex rather than the OKLCH this page used to carry, and a
+     single committed scheme: the light-mode block that used to sit below was deleted
+     rather than converted, because keeping it would mean a second full set of contrast
+     measurements nobody has taken. Every ratio in the comments here was measured, and
+     the pairings are asserted in tests/test_palette.py against the same values spelled
+     in photo_ferry.ui -- the two surfaces are one product and share the palette.
+
+     Nothing here loads a typeface: no bundled font, no webfont, no Google Fonts. The
+     signage feel is weight, size and letterspacing on the system stack. */
   :root {
-    color-scheme: light dark;
-    /* Dark-first tokens (OKLCH, tinted toward the green accent hue ~155) */
-    --bg: oklch(0.17 0.012 155);
-    --surface: oklch(0.215 0.014 155);
-    --surface-2: oklch(0.255 0.015 155);
-    --text: oklch(0.96 0.006 155);
-    --muted: oklch(0.70 0.012 155);
-    --hairline: oklch(0.32 0.012 155);
-    --accent: oklch(0.80 0.15 155);
-    --accent-press: oklch(0.72 0.15 155);
-    --on-accent: oklch(0.20 0.03 155);
-    --danger: oklch(0.68 0.17 25);
-    --radius: 16px;
+    color-scheme: dark;
+    --bg: #17324D;
+    --surface: #203B55;
+    /* Recessed track, DARKER than --bg, and not a third elevated tone. It used to be
+       lighter than --surface, which made the tab bar's active pill invisible the moment
+       both were painted from the same navy. See the .tabs rules for the measurements. */
+    --surface-2: #0E2136;
+    --hairline: #35506A;   /* decorative dividers only */
+    --outline: #7396B8;    /* interactive boundaries, 3.73:1 at worst */
+    --text: #F7F4ED;
+    --text-2: #C5CCD1;     /* muted tone on elevated surfaces */
+    --muted: #8E9AA3;      /* base background and the recessed track only */
+    --accent: #E86A33;
+    --accent-press: #D95B27;
+    --on-accent: #17324D;
+    --danger: #FF8A7A;
+    --radius: 14px;
     --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: oklch(0.975 0.006 155);
-      --surface: oklch(0.995 0.004 155);
-      --surface-2: oklch(0.95 0.008 155);
-      --text: oklch(0.24 0.014 155);
-      --muted: oklch(0.50 0.014 155);
-      --hairline: oklch(0.90 0.01 155);
-      --accent: oklch(0.60 0.15 155);
-      --accent-press: oklch(0.54 0.15 155);
-      --on-accent: oklch(0.99 0.006 155);
-      --danger: oklch(0.55 0.19 25);
-    }
   }
 
   * { box-sizing: border-box; }
@@ -50,19 +49,23 @@
     min-height: 100dvh;
   }
 
+  /* A static badge, not a control, so its ring may be the decorative hairline. */
   .chip {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em;
-    color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700;
+    font-size: 11.5px;
+    color: var(--text-2);
     padding: 5px 10px; border: 1px solid var(--hairline); border-radius: 999px;
   }
   .chip svg { width: 13px; height: 13px; }
 
   header { margin: 22px 0 26px; }
-  h1 { font-size: 30px; line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; margin: 14px 0 6px; }
-  .sub { color: var(--muted); font-size: 16px; line-height: 1.4; margin: 0; }
+  h1 { font-size: 32px; line-height: 1.05; font-weight: 800; letter-spacing: -0.02em; margin: 14px 0 6px; }
+  .sub { color: var(--text-2); font-size: 16px; line-height: 1.4; margin: 0; }
 
-  label.field { display: block; font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+  label.field { display: block; text-transform: uppercase; letter-spacing: 0.12em;
+                font-weight: 700; font-size: 12px; color: var(--text-2);
+                margin-bottom: 10px; }
 
   input[type=tel] {
     width: 100%; text-align: center;
@@ -70,28 +73,90 @@
     letter-spacing: 14px; text-indent: 14px;
     padding: 18px 12px;
     color: var(--text);
-    background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius);
+    /* An input is an interactive component, so its edge owes the 3:1 non-text floor.
+       --outline is 4.24:1 on --bg; the --hairline this used to be is 1.57:1 and fails. */
+    background: var(--surface); border: 1px solid var(--outline); border-radius: var(--radius);
     outline: none; transition: border-color 0.15s var(--ease);
   }
-  input[type=tel]:focus { border-color: var(--accent); }
+  input[type=tel]:focus { border-color: var(--accent); outline: 2px solid var(--accent);
+                          outline-offset: 2px; }
+  /* The UA default placeholder over --surface is ~4.2:1 at best and ~2.5:1 where the UA
+     assumes a light field. --text-2 is 7.11:1 and is the tone this page already uses for
+     secondary copy on an elevated surface. */
+  input::placeholder { color: var(--text-2); opacity: 1; }
 
+  /* 19px at weight 700 qualifies as WCAG large text, which is what lets the navy label
+     sit on the orange at 4.09:1 (3.42:1 on hover) and still clear its floor.
+     tests/test_palette.py parses THIS rule: keep font-size in px and font-weight
+     numeric, and keep both in the base `button` rule rather than moving them. */
   button {
-    font-family: inherit; font-size: 17px; font-weight: 650;
+    font-family: inherit; font-size: 19px; font-weight: 700; letter-spacing: 0.02em;
     width: 100%; padding: 16px 18px; border: 0; border-radius: var(--radius);
     background: var(--accent); color: var(--on-accent);
     cursor: pointer; margin-top: 14px;
     transition: transform 0.12s var(--ease), background 0.15s var(--ease), opacity 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
-  button:active:not(:disabled) { transform: scale(0.985); background: var(--accent-press); }
+  /* Safe on every button, tabs and ghost included: a transform carries no contrast. */
+  button:active:not(:disabled) { transform: scale(0.985); }
+
+  /* The accent press FILL, and the exclusions are load-bearing rather than tidiness.
+     The tabs and the ghost are <button> elements too, so a bare `button:hover` matches
+     them. It also OUTRANKS them: `:not()` takes its argument's specificity, so
+     `button:hover:not(:disabled)` is (0,2,1), above `.tab` (0,1,0) and `.tab.active`
+     (0,2,0). Only `background` was overridden, so the label colour stayed put and the
+     measured result was --text-2 on --accent-press at 2.36:1 for an inactive tab,
+     --text at 3.49:1 for the active one, and -- worst -- the active pill's --outline
+     ring collapsing to 1.24:1, i.e. the state marker vanishing exactly while the user
+     touches the control it marks. Not a press flash either: on iOS Safari :hover latches
+     on tap and persists until the next tap elsewhere, so tapping a direction tab left it
+     there indefinitely.
+
+     Fixed by MATCHING, not by cascade: `:not(.tab)` and `:not(.ghost)` mean this rule
+     cannot apply to those elements at any specificity. The tab rule below additionally
+     outranks this one as a backstop. tests/test_palette.py fails if either exclusion is
+     removed -- do not drop them to "simplify the selector". */
+  button:hover:not(:disabled):not(.tab):not(.ghost),
+  button:active:not(:disabled):not(.tab):not(.ghost) { background: var(--accent-press); }
+
+  /* Recorded rather than left to be re-derived: this is conformant, because 1.4.3 and
+     1.4.11 both exempt inactive components, but the numbers are startling. --on-accent
+     is byte-identical to --bg, so at opacity 0.45 over the page the label composites to
+     exactly #17324D and the fill to #754B41 -- 1.77:1 label-against-fill and 1.77:1
+     fill-against-page. A disabled button is very nearly invisible as an object. Nothing
+     is lost only because each of the two terminal disabled states is RESTATED in the
+     adjacent .msg at 11.95:1 -- not repeated verbatim, and the difference matters if you
+     are checking this: "Saved" is echoed by the .msg's own "Saved.", while "Prepared"
+     never appears in its .msg at all, which instead carries the whole fallback
+     instruction and so says strictly more than the label it sits under. That restatement
+     is what makes leaning on the exemption safe here. Remove it and this stops being
+     conformant-but-ugly. Note the .msg is only a visual restatement unless it is also
+     announced -- see the role="status" on these elements. */
   button:disabled { opacity: 0.45; cursor: default; }
-  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--hairline); }
+
+  /* --outline, not --hairline: this is a control's own edge, and it is the only thing
+     that marks the ghost button as a button at all. */
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--outline); }
+  /* A ghost that flips to solid orange on hover was never the intent -- it was the same
+     over-broad selector, legal at 3.49:1 only because the label inherits 19px/700. It
+     presses to the elevated surface instead: --text on --surface is 10.51:1 and the
+     --outline edge is 3.73:1, both already in APPROVED.
+
+     Note the asymmetry with the tabs, because it decides how this is protected: this
+     rule is (0,3,1), BELOW the (0,4,1) accent rule, so it wins ONLY by that rule's
+     :not(.ghost) exclusion. The tab press rule is (0,4,2) and outranks the accent rule,
+     so the tabs keep a specificity backstop; the ghost has none. Delete :not(.ghost)
+     and the ghost goes orange with no cascade left to stop it, which is why
+     tests/test_palette.py asserts BOTH exclusions on BOTH halves of the accent rule
+     rather than just the one that shipped broken. */
+  button.ghost:hover:not(:disabled),
+  button.ghost:active:not(:disabled) { background: var(--surface); }
 
   .msg { min-height: 20px; font-size: 14.5px; margin: 12px 2px 0; }
   .msg.err { color: var(--danger); }
 
   /* File list */
-  .count { font-size: 13.5px; font-weight: 600; color: var(--muted); margin: 26px 2px 10px; }
+  .count { font-size: 13.5px; font-weight: 600; color: var(--text-2); margin: 26px 2px 10px; }
   ul#list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   li.row {
     display: flex; align-items: center; gap: 13px;
@@ -110,11 +175,15 @@
 
   .meta { min-width: 0; flex: 1; }
   .name { font-size: 15px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .size { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .size { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
 
   .status { flex: none; width: 26px; height: 26px; display: grid; place-items: center; }
   .status svg { width: 26px; height: 26px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--hairline); }
+  /* The dot is the "not sent yet" state, so it is non-text information and owes 3:1.
+     --hairline is 1.57:1 on --bg and was very nearly invisible; --outline is 4.24:1. */
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--outline); }
+  /* The hairline ring is the decorative track; the accent arc riding on it is the
+     actual indicator, at 4.09:1 on --bg. Decorative, so hairline is legal. */
   .spinner { width: 20px; height: 20px; border: 2.5px solid var(--hairline); border-top-color: var(--accent);
              border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -122,26 +191,70 @@
   .xmark { color: var(--danger); }
   @keyframes pop { 0% { transform: scale(0.3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
+  /* The track is --surface-2, now DARKER than the page rather than lighter, so the
+     active pill (--surface) sits above it instead of dissolving into it. Measured:
+     pill on track is 1.41:1, and track on page is 1.24:1.
+
+     1.41:1 is a visible step but it is nowhere near the 3:1 non-text floor, and no
+     colour can fix that: --surface against pure black is 1.82:1, so NOTHING placed
+     behind this pill reaches 3:1 from below. Fill alone therefore cannot be what marks
+     the selected tab. The inset ring below is: --outline is 3.73:1 on the pill and
+     5.26:1 on the track, so the boundary carries the state and clears the floor. It is
+     an inset box-shadow rather than a border so the pill does not change size when it
+     gains one. Removing the ring puts the state back on a 1.41:1 fill difference. */
   .tabs { display: flex; gap: 6px; margin: 22px 0 4px;
           background: var(--surface-2); padding: 4px; border-radius: 999px; }
+  /* --text-2 (10.03:1 on the track), not --muted. --muted is 4.02:1 here, under the 4.5
+     normal-text floor, and this label is 15px at 600 -- normal text, not large. --muted
+     is legal on --bg only, exactly as in photo_ferry.ui. */
   .tab { flex: 1; margin: 0; padding: 11px 10px; font-size: 15px; font-weight: 600;
-         border-radius: 999px; background: transparent; color: var(--muted); }
-  .tab.active { background: var(--surface); color: var(--text); }
+         border-radius: 999px; background: transparent; color: var(--text-2); }
+  .tab.active { background: var(--surface); color: var(--text);
+                box-shadow: inset 0 0 0 1px var(--outline); }
+  /* The tab bar's own press treatment, replacing the accent fill it used to inherit.
+     :active only, deliberately never :hover -- :hover is the state that latches on iOS
+     and it has no meaning on a touch screen anyway. The feedback is the label going to
+     --text (14.83:1 on the track, up from --text-2 at 10.03:1) plus the shared scale
+     transform above; the fill does not move.
 
+     No press FILL, and that is measured rather than lazy. --hairline would be the
+     obvious pick and it is 1.94:1 against the track, under the 3:1 non-text floor. A
+     fill that does clear 3:1 there needs luminance >= 0.1435, which is well above
+     --surface at 0.0409 -- so any compliant press fill would render a merely-pressed
+     tab BRIGHTER than the selected pill, inverting the hierarchy the pill exists to
+     state. Brightening the label costs nothing and inverts nothing.
+
+     (0,4,2) via nav.tabs/button.tab, which outranks the (0,4,1) accent rule above. That
+     is a backstop only: the :not(.tab) there already stops it matching. */
+  nav.tabs button.tab:active:not(:disabled) { color: var(--text); }
+
+  /* A grouping card, not a control -- the Prepare button inside it is the control and
+     carries its own edge -- so this border is decorative and may be the hairline. */
   .batch { border: 1px solid var(--hairline); border-radius: var(--radius);
            padding: 14px 16px; margin-top: 12px; }
   .batch h2 { font-size: 16px; font-weight: 650; margin: 0 0 4px; }
-  .batch .size { font-size: 13px; color: var(--muted); }
+  .batch .size { font-size: 13px; color: var(--text-2); }
   .note { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 14px 2px 0; }
   .fallback { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 14px; }
   .fallback-item { margin: 0; }
   .fallback-item img { width: 100%; border-radius: 12px; display: block; }
+  /* The non-image cells render a download <a>, which had no rule at all and fell through
+     to the UA link colour. Under color-scheme: dark most engines recolour it (~5.5:1 in
+     Chrome, ~4.6:1 in Safari), but any UA that does not gives #0000EE on --bg at 1.40:1,
+     and :visited #551A8B at 1.19:1. This is the iOS 16.2-16.4 fallback path -- the users
+     who reach it are precisely the ones on older engines. Same treatment as footer a. */
+  .fallback-item a { color: var(--text); text-decoration: underline;
+                     text-underline-offset: 3px; font-weight: 700; }
   .fallback-item figcaption { font-size: 12px; color: var(--muted); margin-top: 4px;
                               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .hidden { display: none !important; }
   footer { margin-top: 30px; text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
-  footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  /* This is body text, so it may not be the accent: accent on --bg is 4.09:1, under the
+     4.5 normal-text floor, and 12.5px/600 is nowhere near large. --text is 11.95:1, and
+     the underline restores the "this is a link" cue the colour used to carry alone. */
+  footer a { color: var(--text); text-decoration: underline; text-underline-offset: 3px;
+             font-weight: 700; }
 </style>
 </head>
 <body>
@@ -150,10 +263,18 @@
     Local &amp; encrypted
   </span>
 
-  <!-- Direction switch -->
-  <nav id="tabs" class="tabs hidden">
-    <button id="tab-send" class="tab active">Send to PC</button>
-    <button id="tab-receive" class="tab">Get from PC</button>
+  <!-- Direction switch. role=tablist/tab plus aria-selected because the selected tab was
+       otherwise announced as an ordinary button, leaving the active direction carried by
+       background colour alone. Both tabs stay in the tab order: this deliberately does
+       NOT implement the arrow-key roving-tabindex half of the ARIA tabs pattern, so it
+       is not the full pattern. Leaving both tabs Tab-reachable is the accessible
+       fallback for that omission -- do not add a roving tabindex without also adding the
+       arrow-key handling, or the second tab becomes unreachable by keyboard. -->
+  <nav id="tabs" class="tabs hidden" role="tablist" aria-label="Transfer direction">
+    <button id="tab-send" class="tab active" role="tab"
+            aria-selected="true" aria-controls="upload-screen">Send to PC</button>
+    <button id="tab-receive" class="tab" role="tab"
+            aria-selected="false" aria-controls="receive-screen">Get from PC</button>
   </nav>
 
   <!-- PIN gate -->
@@ -165,11 +286,14 @@
     <label class="field" for="pin">Pairing code</label>
     <input id="pin" type="tel" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="••••••" />
     <button id="unlock">Pair</button>
-    <p id="pin-msg" class="msg err"></p>
+    <!-- role="status" implies aria-live="polite" and aria-atomic="true", which is what
+         these need: the message is written in, never focused, and nothing else signals
+         it. Without it a wrong pairing code produces no announcement at all. -->
+    <p id="pin-msg" class="msg err" role="status"></p>
   </section>
 
   <!-- Upload -->
-  <section id="upload-screen" class="hidden">
+  <section id="upload-screen" class="hidden" role="tabpanel" aria-labelledby="tab-send">
     <header>
       <h1>Send your photos</h1>
       <p class="sub">Pick the photos and videos you want on your PC. They save straight to your Pictures folder at full quality.</p>
@@ -185,8 +309,12 @@
     <button id="more" class="ghost hidden">Select more</button>
   </section>
 
-  <!-- Receive -->
-  <section id="receive-screen" class="hidden">
+  <!-- Receive. tabindex=0 here and deliberately NOT on the send panel: this one is
+       genuinely empty of focusable elements whenever the PC is offering nothing, which
+       is the case the ARIA tabs pattern asks for it. The send panel always carries at
+       least one button, so giving it a tabindex would only add a stop for no gain. -->
+  <section id="receive-screen" class="hidden" role="tabpanel" aria-labelledby="tab-receive"
+           tabindex="0">
     <header>
       <h1>Get from your PC</h1>
       <p class="sub">Photos your PC is offering. Prepare a group, then save it straight to
@@ -194,7 +322,8 @@
     </header>
 
     <div id="batches"></div>
-    <p id="receive-msg" class="msg"></p>
+    <!-- Carries "Checking...", the empty-outbox line, and the reach-your-PC error. -->
+    <p id="receive-msg" class="msg" role="status"></p>
 
     <p class="note">Saving to Photos needs iOS 16.5 or later. On older versions the share
       sheet only offers &ldquo;Save to Files&rdquo;.</p>
@@ -339,6 +468,12 @@ function showTab(which) {
   $("receive-screen").classList.toggle("hidden", send);
   $("tab-send").classList.toggle("active", send);
   $("tab-receive").classList.toggle("active", !send);
+  // aria-selected alongside the class, and it has to move in the same place or the two
+  // drift: the class is what paints the pill and aria-selected is the only thing a
+  // screen reader hears. Setting one without the other is how the tab bar ended up
+  // announcing two plain buttons with no selected state at all.
+  $("tab-send").setAttribute("aria-selected", String(send));
+  $("tab-receive").setAttribute("aria-selected", String(!send));
   // Refetched on every tap of the receive tab, not just the first: the PC can offer
   // more files at any moment, so the tab doubles as the refresh gesture.
   if (!send) loadOutbox();
@@ -445,6 +580,11 @@ function batchCard(batch, index) {
 
   const status = document.createElement("p");
   status.className = "msg";
+  // Per-card progress and outcome: "Preparing 2 of 5...", "Ready.", "Saved.", the
+  // couldn't-load error, and the fallback instruction all land here. Set on the element
+  // before it is appended, so the live region exists ahead of the first write -- a region
+  // added at the same time as its text is not reliably announced.
+  status.setAttribute("role", "status");
 
   card.append(title, size, action, status);
   // Two taps by design. This one only prepares: prepareBatch fetches every file in the
