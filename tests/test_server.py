@@ -1,7 +1,76 @@
 import builtins
+import contextlib
 import io
 import json
+import time
 import urllib.parse
+
+
+def _server_address(connect):
+    """The (host, port) the fixture's `connect()` closes over.
+
+    conftest builds the connection factory around a port it never yields, so the port is
+    read back off an unconnected HTTPSConnection rather than threaded through the
+    fixture's return value. Constructing one opens no socket.
+    """
+    conn = connect()
+    return (conn.host, conn.port)
+
+
+def _tls_connect_raw(connect):
+    """A completed TLS handshake with no HTTP request written yet."""
+    import socket as socket_mod
+    import ssl as ssl_mod
+
+    ctx = ssl_mod.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl_mod.CERT_NONE
+    host, port = _server_address(connect)
+    return ctx.wrap_socket(socket_mod.create_connection((host, port)),
+                           server_hostname=None)
+
+
+@contextlib.contextmanager
+def _standalone_server(cert_pair, tmp_path, **overrides):
+    """A server built for one test, so timeouts and chunk size can be dialled per case.
+
+    Yields (session, connect, outbox, server) -- the same first three the running_server
+    fixture yields, so the cookie helpers above apply unchanged, plus the server itself
+    for tests that need to watch handle_error.
+    """
+    import http.client
+    import ssl as ssl_mod
+    import threading
+
+    from photo_ferry.outbox import Outbox
+    from photo_ferry.server import ReceiverServer
+    from photo_ferry.session import Session
+
+    cert, key = cert_pair
+    session = Session.new(max_pin_attempts=3, idle_timeout_sec=600)
+    outbox = Outbox()
+    settings = dict(
+        host="127.0.0.1", port=0, session=session, destination_dir=tmp_path / "inbox",
+        cert_path=cert, key_path=key, max_file_bytes=64 * 1024 * 1024,
+        max_session_bytes=256 * 1024 * 1024, chunk_bytes=64 * 1024, subnet_prefix=24,
+        outbox=outbox,
+    )
+    settings.update(overrides)
+    server = ReceiverServer(**settings)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+
+    def connect():
+        ctx = ssl_mod.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl_mod.CERT_NONE
+        return http.client.HTTPSConnection("127.0.0.1", port, context=ctx)
+
+    try:
+        yield session, connect, outbox, server
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def _get_token_cookie(session, conn):
@@ -506,3 +575,176 @@ def test_outbox_manifest_keeps_the_real_non_ascii_name(running_server, tmp_path)
     assert resp.status == 200
     items = json.loads(resp.read())
     assert [i["name"] for i in items] == ["写真 📷.jpg"]
+
+
+def test_stalled_handshake_does_not_block_other_clients(running_server):
+    """One TCP connection that never sends a byte must not deny service.
+
+    The handshake used to run in the accept loop, so an idle connection held the whole
+    server: accept() itself blocked on a ClientHello that never came, no worker thread
+    was ever spawned, and the subnet check -- which lives two layers above the handshake
+    -- never got a chance to refuse it. This opens a raw socket, sends nothing at all,
+    and requires a healthy client to still be served promptly.
+    """
+    import socket as socket_mod
+
+    session, connect, _outbox = running_server
+    cookie = _authed_cookie(session, connect)
+
+    conn = connect()
+    conn.request("GET", "/outbox", headers={"Cookie": cookie})
+    assert conn.getresponse().status == 200  # healthy before the stall
+
+    stalled = socket_mod.create_connection(_server_address(connect))
+    try:
+        healthy = connect()
+        healthy.timeout = 5.0
+        healthy.request("GET", "/outbox", headers={"Cookie": cookie})
+        assert healthy.getresponse().status == 200
+    finally:
+        stalled.close()
+
+
+def test_half_open_request_does_not_pin_a_worker_forever(running_server):
+    """A completed handshake followed by a partial request line must time out.
+
+    Without a read deadline each half-request parked a worker thread for the life of the
+    process -- measured at 26 connections producing 28 live threads with no reclamation.
+
+    Reclamation is observed through the sockets rather than through
+    threading.active_count(): the deadline makes the server close the connection, so
+    every client sees EOF. That is state this test owns, and it has no slack -- an
+    active_count assertion needs a tolerance, and any tolerance still passes with one of
+    the five workers pinned forever. A recv that times out is the failure, not a pass,
+    so TimeoutError is caught above OSError rather than folded into it.
+    """
+    _session, connect, _outbox = running_server
+    socks = [_tls_connect_raw(connect) for _ in range(5)]
+    try:
+        for s in socks:
+            s.send(b"GET /outbox HTTP/1.0\r\n")  # deliberately never finished
+            s.settimeout(15.0)
+        started = time.monotonic()
+        for i, s in enumerate(socks):
+            try:
+                answered = s.recv(64)
+            except TimeoutError:
+                raise AssertionError(
+                    f"socket {i} was still open 15s in; its worker was never reclaimed"
+                )
+            except OSError:
+                answered = b""  # a reset, which Windows prefers to a clean close
+            assert answered == b"", (
+                f"socket {i} was answered rather than closed: {answered!r}"
+            )
+        assert time.monotonic() - started < 12.0
+    finally:
+        for s in socks:
+            s.close()
+
+
+def test_tls_still_required_after_the_move(running_server):
+    """The handshake moved threads; it must not have become optional.
+
+    A plaintext request line at the TLS port must not earn an HTTP response: the bytes
+    are not a ClientHello, the handshake fails, and finish_request returns without ever
+    constructing a handler. Windows surfaces that as a reset about as often as a clean
+    EOF, so both are accepted -- what is not accepted is anything that parses as a status
+    line. The second half is what stops this passing against a dead server.
+    """
+    import socket as socket_mod
+
+    session, connect, _outbox = running_server
+
+    raw = socket_mod.create_connection(_server_address(connect))
+    raw.settimeout(10.0)
+    try:
+        raw.sendall(b"GET /outbox HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        try:
+            answered = raw.recv(64)
+        except OSError:
+            answered = b""
+        assert not answered.startswith(b"HTTP/"), (
+            f"a plaintext client got a real response: {answered!r}"
+        )
+    finally:
+        raw.close()
+
+    conn = connect()
+    conn.timeout = 10.0
+    conn.request("GET", f"/?t={session.token}")
+    resp = conn.getresponse()
+    resp.read()
+    assert resp.status == 200
+
+
+def test_request_timeout_sec_actually_bounds_the_read(cert_pair, tmp_path):
+    """A non-default request_timeout_sec must actually bound the request-header read.
+
+    What establishes that deadline is finish_request's settimeout, not the handler's
+    `timeout` property -- deleting the property leaves this passing at 1.01s, measured.
+    1.0 s is chosen far from the 30 s default on purpose: if the deadline reverts, the
+    recv below runs out its own 12 s ceiling and the elapsed assertion fails rather than
+    the test passing slowly.
+
+    The probe at the end is a separate, weaker claim: that the handler resolves its
+    `timeout` from the server instead of hard-coding one. That property is a backstop
+    rather than the mechanism -- but not dead code: setup() re-applies it, so removing
+    finish_request's settimeout alone leaves the deadline intact. Removing both falls
+    back to handshake_timeout_sec rather than to an unbounded read, and at shipped
+    values that fallback is tighter than this deadline, so the property guards the
+    configured value's authority rather than guarding against a hang. A `timeout = 300.0`
+    class attribute in its place IS applied by setup(), after finish_request, and does
+    override the configured value (measured: 12.01s instead of 1.00s).
+    """
+    import socket as socket_mod
+    import ssl as ssl_mod
+    import threading
+
+    from photo_ferry.server import ReceiverServer, _Handler
+    from photo_ferry.session import Session
+
+    cert, key = cert_pair
+    session = Session.new(max_pin_attempts=3, idle_timeout_sec=600)
+    server = ReceiverServer(
+        host="127.0.0.1", port=0, session=session, destination_dir=tmp_path / "inbox",
+        cert_path=cert, key_path=key, max_file_bytes=1024, max_session_bytes=1_000_000,
+        chunk_bytes=64, subnet_prefix=24,
+        handshake_timeout_sec=5.0, request_timeout_sec=1.0,
+    )
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    try:
+        port = server.server_address[1]
+        ctx = ssl_mod.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl_mod.CERT_NONE
+        sock = ctx.wrap_socket(socket_mod.create_connection(("127.0.0.1", port)),
+                               server_hostname=None)
+        try:
+            sock.send(b"GET /outbox HTTP/1.0\r\n")  # deliberately never finished
+            sock.settimeout(12.0)
+            started = time.monotonic()
+            try:
+                answered = sock.recv(64)
+            except OSError:
+                answered = b""  # a reset, which Windows prefers to a clean close
+            elapsed = time.monotonic() - started
+        finally:
+            sock.close()
+        assert answered == b"", f"a half request was answered: {answered!r}"
+        assert elapsed < 6.0, (
+            f"the read was still open {elapsed:.1f}s in; request_timeout_sec=1.0 was "
+            "ignored and the deadline fell back to the class default"
+        )
+
+        # The weaker claim: the handler reads its deadline off the server rather than
+        # carrying a competing copy, so a class attribute added later cannot disagree
+        # with the configured value. BaseRequestHandler.__init__ assigns self.server
+        # before calling setup(), so this is the same lookup setup() performs.
+        probe = _Handler.__new__(_Handler)
+        probe.server = server
+        assert probe.timeout == 1.0
+    finally:
+        server.shutdown()
+        server.server_close()

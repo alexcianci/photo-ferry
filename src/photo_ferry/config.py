@@ -18,6 +18,8 @@ class Config:
     max_session_bytes: int
     chunk_bytes: int
     subnet_prefix: int
+    handshake_timeout_sec: float
+    request_timeout_sec: float
     destination_dir: Path
     cert_path: Path
     key_path: Path
@@ -35,6 +37,11 @@ def default_config() -> Config:
         max_session_bytes=20 * GIB,
         chunk_bytes=64 * 1024,
         subnet_prefix=24,
+        # Both deadlines bound what an UNAUTHENTICATED peer can hold: the TLS handshake,
+        # and then the request line and headers. Either one stalled used to park a worker
+        # for free, indefinitely, before the subnet check could refuse it.
+        handshake_timeout_sec=10.0,
+        request_timeout_sec=30.0,
         destination_dir=paths.destination_dir(),
         cert_path=paths.cert_path(),
         key_path=paths.key_path(),

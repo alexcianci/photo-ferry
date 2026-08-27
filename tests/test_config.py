@@ -17,3 +17,9 @@ def test_paths_are_under_home_and_localappdata(monkeypatch, tmp_path):
     assert paths.pictures_dir() == tmp_path / "home" / "Pictures"
     assert paths.destination_dir() == tmp_path / "home" / "Pictures" / "iPhone Drop"
     assert paths.app_data_dir() == tmp_path / "appdata" / "iPhonePhotoDrop"
+
+
+def test_socket_timeouts_have_safe_defaults():
+    cfg = config.default_config()
+    assert cfg.handshake_timeout_sec == 10.0
+    assert cfg.request_timeout_sec == 30.0

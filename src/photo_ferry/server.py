@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import ssl
 import urllib.parse
 from http import HTTPStatus
@@ -59,6 +60,8 @@ class ReceiverServer(ThreadingHTTPServer):
         max_session_bytes: int,
         chunk_bytes: int,
         subnet_prefix: int,
+        handshake_timeout_sec: float = 10.0,
+        request_timeout_sec: float = 30.0,
         ca_cert_path: Path | None = None,
         outbox: Outbox | None = None,
         on_shutdown: Callable[[], None] | None = None,
@@ -75,9 +78,57 @@ class ReceiverServer(ThreadingHTTPServer):
         self.outbox = outbox if outbox is not None else Outbox()
         self.on_shutdown = on_shutdown
 
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        self.socket = ctx.wrap_socket(self.socket, server_side=True)
+        # Deliberately NOT `self.socket = ctx.wrap_socket(...)`. Wrapping the LISTENING
+        # socket makes accept() perform the TLS handshake inline in the serve_forever
+        # thread, so a single connection that never sends a byte denies service to
+        # everyone, with no timeout and before the subnet check can refuse it. The
+        # handshake belongs in the worker thread, which is finish_request.
+        self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self.ssl_context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        # Both deadlines guard what an UNAUTHENTICATED peer can hold: the handshake, and
+        # then the request line and headers. Either one stalled used to park a worker
+        # for free, which is the whole point of moving the handshake off the accept loop.
+        self.handshake_timeout_sec = handshake_timeout_sec
+        self.request_timeout_sec = request_timeout_sec
+
+    def get_request(self):
+        """Accept only. The socket is still plaintext here, and gets a deadline so a
+        client that stalls mid-handshake cannot hold a worker forever.
+
+        The deadline survives the wrap: SSLSocket._create copies the plaintext socket's
+        timeout onto itself, so this genuinely bounds the handshake rather than only the
+        accept that precedes it.
+        """
+        sock, addr = self.socket.accept()
+        sock.settimeout(self.handshake_timeout_sec)
+        return sock, addr
+
+    def finish_request(self, request, client_address):
+        """Runs on the worker thread, so this is where the handshake belongs.
+
+        A failed handshake is an ordinary event on a LAN with a self-signed CA -- a
+        probe, a cancelled profile install, a client that hangs up. It must not reach
+        socketserver.handle_error, which is not silenced and prints a traceback with
+        absolute paths.
+
+        `request` is detached by the wrap and its fd now belongs to the SSLSocket, so
+        the shutdown_request that ThreadingMixIn runs afterwards on the original is a
+        no-op. That is why the TLS socket is torn down here instead: nothing above this
+        frame can still see it.
+        """
+        try:
+            tls_sock = self.ssl_context.wrap_socket(request, server_side=True)
+        except (ssl.SSLError, OSError):
+            return
+        tls_sock.settimeout(self.request_timeout_sec)
+        try:
+            self.RequestHandlerClass(tls_sock, client_address, self)
+        finally:
+            try:
+                tls_sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            tls_sock.close()
 
     def trigger_shutdown(self) -> None:
         """Invoke the optional shutdown callback. The callback MUST be idempotent
@@ -93,6 +144,31 @@ class _Handler(BaseHTTPRequestHandler):
     @property
     def app(self) -> ReceiverServer:
         return self.server  # type: ignore[return-value]
+
+    @property
+    def timeout(self) -> float:
+        """A second path to the same deadline, not the one that establishes it.
+
+        finish_request has already put request_timeout_sec on the socket by the time
+        this class is instantiated, so deleting this property changes nothing while that
+        line stands -- measured, 1.01s either way. It earns its place twice over anyway.
+        StreamRequestHandler.setup() re-applies it, so it restores the deadline if
+        finish_request's settimeout is ever dropped. Removing both does not leave the
+        read unbounded -- it falls back to handshake_timeout_sec, which get_request put
+        on the socket and which survives the wrap, so at shipped values the fallback is
+        10 s and TIGHTER than the 30 s configured here (measured: 8.01s against an 8 s
+        handshake deadline, versus 2.00s with either path in place). The property's job
+        is therefore to keep the configured knob authoritative, not to prevent a hang.
+        That matters because setup() runs AFTER finish_request, so a `timeout = 30` class
+        attribute here would silently beat the server's request_timeout_sec and turn
+        that parameter into decoration (measured: a hard-coded 300.0 does exactly that).
+        Resolving from the server means any such attribute has to agree with the
+        configured value by construction.
+
+        BaseRequestHandler.__init__ assigns self.server before calling setup(), so this
+        resolves by the time setup() asks for it.
+        """
+        return self.app.request_timeout_sec
 
     def _client_allowed(self) -> bool:
         return net.client_in_subnet(

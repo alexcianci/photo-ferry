@@ -31,6 +31,11 @@ def running_server(tmp_path, cert_pair):
         host="127.0.0.1", port=0, session=session, destination_dir=dest,
         cert_path=cert, key_path=key, max_file_bytes=1024, max_session_bytes=1_000_000,
         chunk_bytes=64, subnet_prefix=24, outbox=outbox,
+        # Far below the shipped defaults so a test that waits for a stalled connection
+        # to be reclaimed can do so in seconds rather than half a minute. Every request
+        # in the suite is local and sub-millisecond, so this bounds only the deliberate
+        # stalls.
+        handshake_timeout_sec=2.0, request_timeout_sec=2.0,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

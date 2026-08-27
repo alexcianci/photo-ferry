@@ -62,6 +62,8 @@ def main() -> None:
         cert_path=cfg.cert_path, key_path=cfg.key_path,
         max_file_bytes=cfg.max_file_bytes, max_session_bytes=cfg.max_session_bytes,
         chunk_bytes=cfg.chunk_bytes, subnet_prefix=cfg.subnet_prefix,
+        handshake_timeout_sec=cfg.handshake_timeout_sec,
+        request_timeout_sec=cfg.request_timeout_sec,
         ca_cert_path=cfg.ca_cert_path,
     )
     url = qr.receiver_url(lan_ip, cfg.port, session.token)
