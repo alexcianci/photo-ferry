@@ -775,7 +775,8 @@ function shareBatch(files, btn, status, skipped) {
 //
 // NOT a second pipeline: it renders the blobs this batch already fetched. Nothing goes
 // back to the server, and there is no alternate route to maintain. Rendering real <img>
-// elements is the whole point -- long-press on an image gives "Add to Photos", which is
+// elements is the whole point -- long-press on an image offers a save (Safari calls it
+// "Add to Photos", Chrome "Save image"), which is
 // the only per-item path to the camera roll that iOS offers a web page.
 //
 // It renders THE grid for this card, never another one. Nothing calls it twice today:
@@ -806,11 +807,27 @@ function saveIndividually(files, btn, status, skipped) {
   // would be wrong advice there, for a menu that browser does not have. The iOS version
   // detail already stands in the note under the card list.
   //
-  // "each image", not "each item": long press offers Add to Photos for images only.
+  // "each image", not "each item": long press offers a save for images only.
+  //
+  // BOTH menu labels are named, because naming one was a real defect found on
+  // hardware: the page said "choose Add to Photos", which is Safari's wording, to an
+  // operator in Chrome for iOS whose menu says "Save image in...". This is the one
+  // screen where the user has to follow a written instruction by hand, and it is the
+  // degraded path, reached by someone already having a worse time. If a third browser
+  // has to be named some day, drop the names rather than list three.
+  //
+  // The clause below describes the CELL, not a file type. It shares the grid's own rule --
+  // a cell is a link iff its type is not image/* -- so the copy and the rendering cannot
+  // disagree. It deliberately does not say "videos": a still image can land in that branch
+  // too, because mimetypes can fail to resolve an allowed extension, the server then
+  // offers the file as application/octet-stream (which the media allowlist tolerates on
+  // purpose), and the phone types the File the same way. Calling that a video is wrong on
+  // a page whose whole job is moving photos.
   const linked = files.filter((f) => !f.type.startsWith("image/")).length;
   status.textContent =
     "This browser can't hand the whole group to Photos. On iPhone, press and hold each " +
-    "image below and choose Add to Photos." +
+    "image below and save it. Safari calls that Add to Photos; Chrome calls it Save " +
+    "image." +
     (linked ? " Items shown as a link have to be downloaded instead." : "") +
     skipNote(skipped);
 
