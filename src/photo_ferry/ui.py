@@ -152,6 +152,10 @@ class ReceiverWindow:
             activestyle="none",
         )
         self.listbox.pack(fill="x", padx=1, pady=1)
+        # Clicking a row is attention too. add="+" so this rides ALONGSIDE the class
+        # binding that does the selecting instead of displacing it, and the handler
+        # returns None, so the default behaviour still runs afterwards.
+        self.listbox.bind("<Button-1>", self._attention, add="+")
 
         # The border is a wrapping Frame, not an option on the Button, because
         # `highlightbackground` is INERT on tk.Button here. Measured by reading the
@@ -176,6 +180,10 @@ class ReceiverWindow:
             padx=14, pady=7,
         )
         self.stop_btn.pack(fill="x", padx=1, pady=1)
+        # Deliberately NOT wired to _attention, and the omission is not an oversight.
+        # Its command tears down the server and destroys the root, so nothing ever reads
+        # _last_activity again; a touch here could not change an outcome. Every other
+        # clickable control in this window routes through _attention.
 
         # Decorative rule between the two halves of the window, and the only place
         # HAIRLINE is legal: it separates nothing interactive and carries no state.
@@ -195,6 +203,7 @@ class ReceiverWindow:
             activestyle="none",
         )
         self.outbox_list.pack(fill="x")
+        self.outbox_list.bind("<Button-1>", self._attention, add="+")
 
         # Styled as a drop zone even though nothing can be dropped on it yet: it reads as
         # the place files go, and it is already the right shape if DnD returns later.
@@ -222,7 +231,28 @@ class ReceiverWindow:
         for widget in (self.drop_zone, *self.drop_zone.winfo_children()):
             widget.bind("<Button-1>", lambda _e: self.add_files())
 
+    def _attention(self, _event=None) -> None:
+        """A human is using this window, so the session is not idle.
+
+        The idle timeout's purpose is unchanged: nothing may listen unattended, and ten
+        minutes of genuinely unattended time still stops the listener. What changed is
+        the evidence it accepts. Until now the only thing that moved the timer was an
+        HTTP request from the phone -- a sound proxy for attention while the sole
+        PC-side act was looking at a QR code, and a broken one once Task 8 made the
+        desktop half a place where real work happens. A user choosing which photos to
+        send is present by definition; the timer simply could not see them.
+
+        Takes an unused event argument so it can be handed straight to bind().
+        """
+        self.server.session.touch()
+
     def add_files(self) -> None:
+        # BEFORE the dialog opens, and that ordering is the whole fix. A native file
+        # dialog runs a NESTED Tk event loop, so `after` callbacks keep firing while it
+        # is up and _poll can call stop() with the picker still on screen -- which is the
+        # reported case, ten minutes spent choosing. Touching on return is too late, and
+        # on a cancel never happens at all, which is why offer() alone does not close it.
+        self._attention()
         paths = filedialog.askopenfilenames(
             title="Add photos or videos", filetypes=self.FILE_TYPES,
         )
@@ -252,6 +282,10 @@ class ReceiverWindow:
         means a new PIN and a re-scanned QR. Compared on the resolved form Outbox
         stores, so the comparison sees the same identity the registry does.
         """
+        # Every intake path lands here, including any future drag-and-drop caller that
+        # never opens the picker, so the seam touches on its own account rather than
+        # relying on add_files having done it.
+        self._attention()
         known = {entry.path for entry in self.outbox.list()}
         fresh = []
         for raw in paths:
