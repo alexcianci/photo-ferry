@@ -72,6 +72,17 @@ def human_size(n: int) -> str:
 
 class ReceiverWindow:
     POLL_MS = 400
+    # Largest last: Tk treats the first as the default and the rest as alternates, and
+    # the 512 is the one that must survive being scaled UP on a high-DPI slot.
+    # tests/test_packaging.py pins each of these to its declared pixel size, because
+    # _set_window_icon swallows every failure -- a name that stops resolving costs the
+    # icon silently rather than raising.
+    ICON_ASSETS = (
+        "static/app-icon-16.png",
+        "static/app-icon-32.png",
+        "static/app-icon-48.png",
+        "static/app-icon.png",
+    )
     FILE_TYPES = [
         ("Photos and videos",
          "*.heic *.heif *.jpg *.jpeg *.png *.gif *.webp *.mov *.mp4 *.m4v"),
@@ -338,10 +349,25 @@ class ReceiverWindow:
         # missing asset block launch.
         try:
             from importlib import resources
-            data = (resources.files("photo_ferry")
-                    .joinpath("static/app-icon.png").read_bytes())
-            self._app_icon = tk.PhotoImage(data=base64.b64encode(data).decode("ascii"))
-            self.root.iconphoto(True, self._app_icon)
+            root = resources.files("photo_ferry")
+            images = [
+                tk.PhotoImage(data=base64.b64encode(
+                    root.joinpath(name).read_bytes()).decode("ascii"))
+                for name in self.ICON_ASSETS
+            ]
+            # Every size in one call. Tk hands them all to the window manager, which
+            # picks per slot -- the title bar wants 16, the taskbar 32 or 48. Given only
+            # the 512 it had to resample one itself, and the title bar got a smudge: the
+            # small rungs exist to be CHOSEN, not computed. They are separate files
+            # rather than one .ico because iconphoto takes image data, and because
+            # assets/app.ico is the shortcut's icon, read by setup.ps1 and never shipped
+            # inside the package.
+            #
+            # The whole list is held, not just the last one: Tk keeps no reference of its
+            # own to a PhotoImage, so any image that is garbage collected takes its slot
+            # with it.
+            self._app_icons = images
+            self.root.iconphoto(True, *images)
         except Exception:
             pass
 

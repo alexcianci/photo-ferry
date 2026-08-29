@@ -29,3 +29,42 @@ def test_runtime_dependencies_stay_pure_python():
         "Do not edit the expected list here just to silence this without making\n"
         "that decision first."
     )
+
+
+def test_every_window_icon_asset_ships_and_is_the_size_it_claims():
+    """The title bar icon is the one users see every session, and nothing else notices
+    when it breaks.
+
+    `_set_window_icon` catches every exception, so a renamed or missing asset costs the
+    icon silently -- the window simply comes up with Tk's default and no error is raised
+    anywhere. The sizes matter as much as the presence: the whole point of shipping 16,
+    32 and 48 alongside the 512 is that the window manager CHOOSES one per slot instead
+    of resampling the big one down, which is what produced a smudged title bar.
+
+    This does not check that the icon renders, only that every declared asset exists,
+    parses as a PNG, and is square at its declared size. It is also the only test that
+    would notice `static/*.png` being dropped from package-data in pyproject.toml.
+    """
+    import struct
+
+    from photo_ferry.ui import ReceiverWindow
+
+    root = Path(__file__).resolve().parents[1] / "src" / "photo_ferry"
+    for name in ReceiverWindow.ICON_ASSETS:
+        path = root / name
+        assert path.is_file(), (
+            f"{name} is declared in ReceiverWindow.ICON_ASSETS but is not on disk.\n"
+            "_set_window_icon swallows the failure, so the app would launch with no\n"
+            "icon and say nothing."
+        )
+        data = path.read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{name} is not a PNG"
+        width, height = struct.unpack(">II", data[16:24])
+        assert width == height, f"{name} is {width}x{height}; icons must be square"
+        if name != "static/app-icon.png":
+            declared = int(name.rsplit("-", 1)[1].split(".")[0])
+            assert width == declared, (
+                f"{name} claims {declared}px in its filename but is {width}px.\n"
+                "The filename is what ICON_ASSETS selects on, so a mismatch means the\n"
+                "window manager is handed a size it did not ask for."
+            )
