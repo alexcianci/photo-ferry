@@ -9,7 +9,7 @@ This is **not** AirDrop. AirDrop rides on Apple's proprietary AWDL protocol, whi
 supported implementation on Windows. Photo Ferry instead runs a tiny HTTPS server on your
 PC that your iPhone talks to through Safari. Same result, fully local.
 
-<img width="296" height="526" alt="PC receiver showing the scan-to-connect screen" src="docs/screenshots/desktop.png" /> <img width="300" height="526" alt="iPhone pairing screen" src="docs/screenshots/iphone-pair.png" /> <img width="302" height="526" alt="iPhone send-photos screen" src="docs/screenshots/iphone-send.jpg" />
+<img width="296" height="785" alt="PC receiver showing the scan-to-connect screen, the received-files list and the send-to-iPhone panel" src="docs/screenshots/desktop.png" /> <img width="302" height="526" alt="iPhone pairing screen" src="docs/screenshots/iphone-pair.png" /> <img width="302" height="526" alt="iPhone send-photos screen" src="docs/screenshots/iphone-send.jpg" /> <img width="302" height="526" alt="iPhone get-from-PC screen" src="docs/screenshots/iphone-receive.png" />
 
 
 
