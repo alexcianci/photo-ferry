@@ -2,7 +2,7 @@
 
 The id is the whole security model for the outbound path: the URL never carries a
 filesystem path, so a request can only ever name a file the user explicitly picked.
-Traversal is not filtered here — it is impossible, because the untrusted input is a
+Traversal is not filtered here: it is impossible, because the untrusted input is a
 dictionary key.
 """
 from __future__ import annotations

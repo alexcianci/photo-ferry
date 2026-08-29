@@ -308,7 +308,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.NOT_FOUND, b"not found")
             return
         # Re-check filesystem state only: the file may have been deleted since it was
-        # picked. Deliberately no media re-check here — name and ctype were frozen on
+        # picked. Deliberately no media re-check here: name and ctype were frozen on
         # the entry at add time, so testing them again would evaluate a pure function
         # over unchanged inputs and could never fail.
         if not entry.path.is_file():

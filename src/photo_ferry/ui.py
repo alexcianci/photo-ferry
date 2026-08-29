@@ -339,7 +339,7 @@ class ReceiverWindow:
             # has to keep rather than one the numbers keep. Primary still reads as "this
             # line changed", at 11.95:1.
             self.send_hint.config(
-                text=f"{total} items. iOS saves one batch at a time — "
+                text=f"{total} items. iOS saves one batch at a time, so "
                      "your phone will show these in groups.",
                 fg=TEXT,
             )
@@ -407,7 +407,7 @@ class ReceiverWindow:
             self.status.config(text=f"{self._seen} {word} received", fg=TEXT)
         elif self._firewall_ok is False and self._seen == 0:
             self.status.config(
-                text="⚠  Firewall rule missing — re-run setup so your phone can connect",
+                text="⚠  Firewall rule missing. Re-run setup so your phone can connect",
                 fg=DANGER,
             )
 

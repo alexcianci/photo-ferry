@@ -59,7 +59,7 @@ in your Pictures folder.
 Because the certificate is generated locally rather than by a public authority, Safari shows
 a one-time "not private" warning.
 
-The certificate is called **"Photo Drop Local CA"** — the project's former name. It is kept
+The certificate is called **"Photo Drop Local CA"**, the project's former name. It is kept
 so that phones which already trust it keep working after the rename.
 
 To remove the warning for good:
@@ -95,4 +95,4 @@ MIT. See [LICENSE](LICENSE). Third-party credits in [NOTICE](NOTICE).
 ## Support
 
 If Photo Ferry saved you a cable hunt, there is a **Sponsor** button at the top of
-the repo. No pressure — the tool is free and always will be.
+the repo. No pressure; the tool is free and always will be.
