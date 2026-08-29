@@ -1,6 +1,6 @@
 """Desktop control window: shows the QR + pairing code, lists received files, Stop.
 
-Transit signage, matching the phone page: a deep navy ground, one warm orange accent
+Transit signage, matching the phone page: a deep navy ground, one bright water-blue accent
 used only as a fill, wide-tracked uppercase labels, and a white card behind the QR so
 it stays scannable regardless of the surrounding theme.
 """
@@ -30,17 +30,24 @@ TEXT_2 = "#C5CCD1"      # secondary - 8.08 / 7.11; the only muted tone allowed o
 MUTED = "#8E9AA3"       # tertiary - 4.56 on BG but 4.02 on SURFACE, so BG only here. The
                         # page also allows it on its recessed track (5.66), which the Tk
                         # window has no counterpart for.
-ACCENT = "#E86A33"      # buttons, focus rings, highlights - NEVER body or label text
-ACCENT_PRESS = "#D95B27"
-ON_ACCENT = "#17324D"   # navy on orange, 4.09:1 - large text only, see BUTTON_FONT_PT
+# 2026-08-29: lightened from #4B9CD3 at the operator's call, and that crossed a line
+# the palette used to hold. The accent was deliberately kept UNDER 4.5:1 so that using
+# it as body text was IMPOSSIBLE rather than merely discouraged. At 7.24:1 it is now
+# legal as text anywhere, so the rule below is POLICY, held by review and by the comment
+# at each site -- it is no longer enforced by measurement. Every comment in this file
+# that reasons "accent is illegal here" was rewritten with it; if one says that again,
+# it predates this change. See tests/test_palette.py::test_accent_is_legal_where_it_is_used.
+ACCENT = "#9DC6E0"      # buttons, focus rings, highlights - NEVER body or label text
+ACCENT_PRESS = "#86B4D2"
+ON_ACCENT = "#17324D"   # navy on blue, 7.24:1 - clears the normal-text floor
 DANGER = "#FF8A7A"      # the brief supplies no error tone; 5.73 on BG, 5.04 on SURFACE
 
-# Button label type is load-bearing for contrast, not taste. ON_ACCENT on ACCENT is
-# 4.09:1 and 3.42:1 on ACCENT_PRESS, both under the 4.5 normal-text floor and clearing
-# only the 3:1 large-text floor. 14pt bold is exactly WCAG's large-text threshold, and
-# is the same threshold the phone page meets as 19px at weight 700. Shrinking or
-# lightening either one drops the button below its floor, so both are asserted in
-# tests/test_palette.py.
+# Button label type was load-bearing for contrast until 2026-08-29 and is now design
+# intent. ON_ACCENT on ACCENT is 7.24:1, and 5.92:1 on ACCENT_PRESS, so both clear the
+# 4.5 normal-text floor at any size. 14pt bold, and the phone page's 19px at weight 700,
+# are still asserted in tests/test_palette.py -- they hold the look now rather than the
+# legality. Shrinking the label no longer makes it illegal, it just stops it reading as
+# a button.
 BUTTON_FONT_PT = 14
 BUTTON_FONT_WEIGHT = "bold"
 
@@ -128,9 +135,10 @@ class ReceiverWindow:
         # Wider tracking than tracked() gives, and left alone on purpose: six digits read
         # one at a time need more air than a word does.
         spaced = "  ".join(pin)
-        # The one place accent carries glyphs. 4.09:1 on BG is under the 4.5 normal-text
-        # floor but over the 3:1 large-text floor, and 30pt bold is far above WCAG's
-        # large-text threshold, so this clears. Shrinking it would not.
+        # The one place accent carries glyphs. 7.24:1 on BG clears the 4.5 normal-text
+        # floor outright, so unlike before the lightening this no longer depends on the
+        # 30pt bold to be legal. The size stays because six digits read one at a time
+        # want the air, not because contrast needs it.
         tk.Label(wrap, text=spaced, font=f_pin, fg=ACCENT, bg=BG).pack(anchor="center")
 
         self.status = tk.Label(wrap, text="Waiting for photos…", font=f_status, fg=MUTED, bg=BG)
@@ -144,10 +152,11 @@ class ReceiverWindow:
         list_wrap.pack(fill="x")
         self.listbox = tk.Listbox(
             list_wrap, height=6, width=40, font=f_list, bd=0, highlightthickness=0,
-            # selectforeground was ACCENT, which made the selected row body text at
-            # 3.60:1 on SURFACE -- under the 4.5 normal-text floor, and the exact
-            # accent-as-text usage the palette forbids. TEXT is 10.51:1 and the
-            # selection still reads, because selectbackground differs from the row fill.
+            # selectforeground was ACCENT, which made the selected row body text. At
+            # today's 6.37:1 on SURFACE that would be legal, and it stays TEXT anyway:
+            # accent-as-body-text is the palette's policy line, and it outlived the
+            # measurement that used to enforce it. TEXT is 10.51:1 and the selection
+            # still reads, because selectbackground differs from the row fill.
             bg=SURFACE, fg=TEXT, selectbackground=SURFACE, selectforeground=TEXT,
             activestyle="none",
         )
@@ -215,13 +224,14 @@ class ReceiverWindow:
         )
         self.drop_zone.pack(fill="x", pady=(10, 0))
         # A glyph used as an icon, not as text, so the 3:1 non-text floor applies and
-        # 3.60:1 on SURFACE clears it. The phone page's check icon and spinner keep the
+        # 6.37:1 on SURFACE clears it. The phone page's check icon and spinner keep the
         # accent for the same reason.
         tk.Label(self.drop_zone, text="+", font=tkfont.Font(family="Segoe UI", size=20),
                  fg=ACCENT, bg=SURFACE).pack(pady=(14, 0))
         # The picker's action label: the one filled control on this window, so it wears
-        # the accent as a fill with the navy label on top. That pairing is 4.09:1, which
-        # is legal only as large text, which is what f_button (14pt bold) buys.
+        # the accent as a fill with the navy label on top. That pairing is 7.24:1 and
+        # clears the normal-text floor, so f_button (14pt bold) is now about weight in
+        # the layout rather than about staying legal.
         tk.Label(self.drop_zone, text="Choose photos or videos", font=f_button,
                  fg=ON_ACCENT, bg=ACCENT).pack(pady=(10, 0), ipadx=14, ipady=8)
         # TEXT_2, not MUTED: this label sits on SURFACE, where MUTED is 4.02:1 and fails
@@ -312,10 +322,11 @@ class ReceiverWindow:
         # exactly 25 items still travel as a single group and need no warning. 26 is the
         # first count iOS has to split, which is where the grouping hint belongs.
         if total > self.max_batch_files:
-            # Promoted from MUTED to TEXT rather than to ACCENT. This is 10pt regular --
-            # normal text -- and accent on BG is 4.09:1, under the 4.5 floor, so an
-            # accent hint would be the palette's own forbidden pairing. Going to primary
-            # still reads as "this line changed", at 11.95:1.
+            # Promoted from MUTED to TEXT rather than to ACCENT. Accent on BG is now
+            # 7.24:1, so an accent hint would be legal on contrast alone -- and it is
+            # still refused, because accent is not body text. That is now a rule someone
+            # has to keep rather than one the numbers keep. Primary still reads as "this
+            # line changed", at 11.95:1.
             self.send_hint.config(
                 text=f"{total} items. iOS saves one batch at a time — "
                      "your phone will show these in groups.",
@@ -363,8 +374,9 @@ class ReceiverWindow:
         if len(received) != self._seen:
             self._seen = len(received)
             word = "photo" if self._seen == 1 else "photos"
-            # TEXT, not ACCENT, for the same reason as the send hint: this is 10pt
-            # regular text and accent on BG is 4.09:1. The palette has no success tone,
+            # TEXT, not ACCENT, for the same reason as the send hint: accent is not
+            # body text, now by policy rather than by measurement. The palette has no
+            # success tone,
             # so the signal is the jump from MUTED to primary rather than a hue change.
             self.status.config(text=f"{self._seen} {word} received", fg=TEXT)
         elif self._firewall_ok is False and self._seen == 0:

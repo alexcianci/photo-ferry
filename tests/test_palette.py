@@ -172,7 +172,7 @@ def test_every_approved_pairing_meets_its_floor():
 def test_forbidden_pairings_stay_forbidden():
     """Keeps the reasons in the codebase rather than in a commit message someone has to
     go and find."""
-    # Warm white on the orange is 2.92:1. This is why button labels are navy.
+    # Warm white on the accent is 1.65:1. This is why button labels are navy.
     assert contrast(ui.TEXT, ui.ACCENT) < AA_LARGE
     # Muted on elevated is 4.02:1, under the normal-text floor, so TEXT_2 is used there.
     assert contrast(ui.MUTED, ui.SURFACE) < AA_TEXT
@@ -180,15 +180,36 @@ def test_forbidden_pairings_stay_forbidden():
     assert contrast(ui.HAIRLINE, ui.BG) < AA_NONTEXT
 
 
-def test_accent_would_fail_as_body_text():
-    """Accent is buttons, focus rings and highlights only -- but note what this checks.
+def test_accent_is_legal_where_it_is_used():
+    """Replaces test_accent_would_fail_as_body_text, retired 2026-08-29.
 
-    It measures that the accent CANNOT legally be body text; nothing here scans either
-    surface for a usage. The old name claimed the stronger property. Usage is held by
-    review and by the comments at each accent site, not by this assertion.
+    THE RETIRED RULE. That test asserted the accent stayed UNDER 4.5:1 on both
+    surfaces, so that using it as body text was impossible rather than merely
+    discouraged. The operator lightened the accent past that ceiling deliberately --
+    #E86A33 to #0C98DF to #4B9CD3 to #9DC6E0 -- and the ceiling went with it.
+
+    WHY RETIRING IT IS NOT A LOSS OF ACCESSIBILITY. The ceiling was never a WCAG
+    requirement; WCAG has floors, not ceilings. Every step of that lightening RAISED
+    contrast: the navy button label went 4.09 -> 7.24:1. What was given up is a
+    guarantee that a future edit cannot misuse the accent as body text, and that
+    guarantee now has to be kept by review and by the comment at each accent site in
+    ui.py and upload.html. Those comments were rewritten when this changed; one still
+    claiming "accent is illegal as text" would predate it and be wrong.
+
+    WHAT IS STILL ENFORCED, and it is the half that protects a reader: the accent has
+    to clear the large-text/non-text floor everywhere it is actually used -- the
+    pairing code, the "+" glyph, the spinner arc, the button fill -- and warm white on
+    the accent has to stay ILLEGAL, which is what keeps button labels navy. A light
+    accent makes the first easier and the second more certain, so both are checked
+    here rather than assumed to follow.
     """
-    assert contrast(ui.ACCENT, ui.BG) < AA_TEXT
-    assert contrast(ui.ACCENT, ui.SURFACE) < AA_TEXT
+    assert contrast(ui.ACCENT, ui.BG) >= AA_LARGE
+    assert contrast(ui.ACCENT, ui.SURFACE) >= AA_LARGE
+    assert contrast(ui.ACCENT_PRESS, ui.BG) >= AA_LARGE
+    # The pairing is what makes a navy label on an accent fill readable at all.
+    assert contrast(ui.ON_ACCENT, ui.ACCENT) >= AA_TEXT
+    # And warm white on it must remain unusable, or the navy label stops being forced.
+    assert contrast(ui.TEXT, ui.ACCENT) < AA_LARGE
 
 
 LARGE_TEXT_PX = 18.66          # WCAG large text: >=18.66px at weight 700, or >=24px
@@ -208,10 +229,11 @@ def _phone_button_type():
 
 
 def test_button_label_type_keeps_the_accent_legal():
-    """The navy-on-orange label is 4.09:1 (3.42:1 on hover), under the 4.5 normal-text
-    floor and clearing only the 3:1 LARGE-text floor. The label's size and weight are
-    therefore load-bearing for contrast rather than a matter of taste: shrinking or
-    lightening it silently drops both button states below their floor.
+    """The navy-on-accent label is 7.24:1 (5.92:1 on hover) since the 2026-08-29
+    lightening, so it clears the 4.5 normal-text floor at any size and the label's type
+    is NO LONGER load-bearing for contrast. It is asserted anyway, as design intent: a
+    button that stops looking like a button is still a defect, just not an accessibility
+    one. Before that change this test was the thing keeping both button states legal.
 
     The phone page is checked by parsing its own stylesheet, deliberately strictly. If
     the rule is restructured so the pattern stops matching, this fails rather than
@@ -356,7 +378,7 @@ def test_no_button_rule_repaints_the_tabs_or_the_ghost():
     is (0,4,2) and outranks the (0,4,1) accent rule, so the tabs keep a specificity
     backstop even if their exclusion is dropped. The ghost press rule is (0,3,1), BELOW
     the accent rule, so it wins by the exclusion and nothing else -- delete :not(.ghost)
-    and the ghost silently goes orange with no cascade left to catch it. Same class of
+    and the ghost silently takes the accent fill with no cascade left to catch it. Same class of
     defect as the tab case, one rung more fragile, and that is why both are asserted
     here rather than only the one that shipped broken.
 

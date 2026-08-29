@@ -28,8 +28,8 @@
     --text: #F7F4ED;
     --text-2: #C5CCD1;     /* muted tone on elevated surfaces */
     --muted: #8E9AA3;      /* base background and the recessed track only */
-    --accent: #E86A33;
-    --accent-press: #D95B27;
+    --accent: #9DC6E0;
+    --accent-press: #86B4D2;
     --on-accent: #17324D;
     --danger: #FF8A7A;
     --radius: 14px;
@@ -85,8 +85,9 @@
      secondary copy on an elevated surface. */
   input::placeholder { color: var(--text-2); opacity: 1; }
 
-  /* 19px at weight 700 qualifies as WCAG large text, which is what lets the navy label
-     sit on the orange at 4.09:1 (3.42:1 on hover) and still clear its floor.
+  /* The navy label sits on the accent at 7.24:1 (5.92:1 on hover) and clears the
+     normal-text floor at any size, since the 2026-08-29 lightening. 19px at weight 700
+     stays as design intent rather than as the thing keeping it legal.
      tests/test_palette.py parses THIS rule: keep font-size in px and font-weight
      numeric, and keep both in the base `button` rule rather than moving them. */
   button {
@@ -137,7 +138,7 @@
   /* --outline, not --hairline: this is a control's own edge, and it is the only thing
      that marks the ghost button as a button at all. */
   button.ghost { background: transparent; color: var(--text); border: 1px solid var(--outline); }
-  /* A ghost that flips to solid orange on hover was never the intent -- it was the same
+  /* A ghost that flips to a solid accent fill on hover was never the intent -- it was the same
      over-broad selector, legal at 3.49:1 only because the label inherits 19px/700. It
      presses to the elevated surface instead: --text on --surface is 10.51:1 and the
      --outline edge is 3.73:1, both already in APPROVED.
@@ -146,7 +147,7 @@
      rule is (0,3,1), BELOW the (0,4,1) accent rule, so it wins ONLY by that rule's
      :not(.ghost) exclusion. The tab press rule is (0,4,2) and outranks the accent rule,
      so the tabs keep a specificity backstop; the ghost has none. Delete :not(.ghost)
-     and the ghost goes orange with no cascade left to stop it, which is why
+     and the ghost takes the accent fill with no cascade left to stop it, which is why
      tests/test_palette.py asserts BOTH exclusions on BOTH halves of the accent rule
      rather than just the one that shipped broken. */
   button.ghost:hover:not(:disabled),
@@ -183,7 +184,7 @@
      --hairline is 1.57:1 on --bg and was very nearly invisible; --outline is 4.24:1. */
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--outline); }
   /* The hairline ring is the decorative track; the accent arc riding on it is the
-     actual indicator, at 4.09:1 on --bg. Decorative, so hairline is legal. */
+     actual indicator, at 7.24:1 on --bg. Decorative, so hairline is legal. */
   .spinner { width: 20px; height: 20px; border: 2.5px solid var(--hairline); border-top-color: var(--accent);
              border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -250,8 +251,9 @@
 
   .hidden { display: none !important; }
   footer { margin-top: 30px; text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
-  /* This is body text, so it may not be the accent: accent on --bg is 4.09:1, under the
-     4.5 normal-text floor, and 12.5px/600 is nowhere near large. --text is 11.95:1, and
+  /* This is body text, so it may not be the accent -- a policy line since the accent
+     was lightened, not a contrast one: accent on --bg is 7.24:1 and would now pass.
+     --text is 11.95:1, and
      the underline restores the "this is a link" cue the colour used to carry alone. */
   footer a { color: var(--text); text-decoration: underline; text-underline-offset: 3px;
              font-weight: 700; }
@@ -805,14 +807,6 @@ function saveIndividually(files, btn, status, skipped) {
   // detail already stands in the note under the card list.
   //
   // "each image", not "each item": long press offers Add to Photos for images only.
-  //
-  // The clause below describes the CELL, not a file type. It shares the grid's own rule --
-  // a cell is a link iff its type is not image/* -- so the copy and the rendering cannot
-  // disagree. It deliberately does not say "videos": a still image can land in that branch
-  // too, because mimetypes can fail to resolve an allowed extension, the server then
-  // offers the file as application/octet-stream (which the media allowlist tolerates on
-  // purpose), and the phone types the File the same way. Calling that a video is wrong on
-  // a page whose whole job is moving photos.
   const linked = files.filter((f) => !f.type.startsWith("image/")).length;
   status.textContent =
     "This browser can't hand the whole group to Photos. On iPhone, press and hold each " +
