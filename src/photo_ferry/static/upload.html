@@ -775,8 +775,7 @@ function shareBatch(files, btn, status, skipped) {
 //
 // NOT a second pipeline: it renders the blobs this batch already fetched. Nothing goes
 // back to the server, and there is no alternate route to maintain. Rendering real <img>
-// elements is the whole point -- long-press on an image offers a save (Safari calls it
-// "Add to Photos", Chrome "Save image"), which is
+// elements is the whole point -- long-press on an image offers "Save to Photos", which is
 // the only per-item path to the camera roll that iOS offers a web page.
 //
 // It renders THE grid for this card, never another one. Nothing calls it twice today:
@@ -809,12 +808,10 @@ function saveIndividually(files, btn, status, skipped) {
   //
   // "each image", not "each item": long press offers a save for images only.
   //
-  // BOTH menu labels are named, because naming one was a real defect found on
-  // hardware: the page said "choose Add to Photos", which is Safari's wording, to an
-  // operator in Chrome for iOS whose menu says "Save image in...". This is the one
-  // screen where the user has to follow a written instruction by hand, and it is the
-  // degraded path, reached by someone already having a worse time. If a third browser
-  // has to be named some day, drop the names rather than list three.
+  // "Save to Photos" is the label iOS actually shows, confirmed on hardware in BOTH
+  // Safari and Chrome. This line said "Add to Photos" until 2026-08-29, which is not
+  // what either browser offers, and it is the one screen where the user has to follow
+  // a written instruction by hand. Do not reword it from memory; check a device.
   //
   // The clause below describes the CELL, not a file type. It shares the grid's own rule --
   // a cell is a link iff its type is not image/* -- so the copy and the rendering cannot
@@ -826,8 +823,7 @@ function saveIndividually(files, btn, status, skipped) {
   const linked = files.filter((f) => !f.type.startsWith("image/")).length;
   status.textContent =
     "This browser can't hand the whole group to Photos. On iPhone, press and hold each " +
-    "image below and save it. Safari calls that Add to Photos; Chrome calls it Save " +
-    "image." +
+    "image below and choose Save to Photos." +
     (linked ? " Items shown as a link have to be downloaded instead." : "") +
     skipNote(skipped);
 
@@ -849,7 +845,7 @@ function saveIndividually(files, btn, status, skipped) {
       img.alt = file.name;
       cell.appendChild(img);
     } else {
-      // Not an image, so long press offers no Add to Photos: give it a real download.
+      // Not an image, so long press offers no Save to Photos: give it a real download.
       const link = document.createElement("a");
       link.href = url;
       link.download = file.name;
