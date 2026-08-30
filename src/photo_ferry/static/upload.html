@@ -59,6 +59,17 @@
   }
   .chip svg { width: 13px; height: 13px; }
 
+  /* Brand lockup. Until now the page never named the product anywhere: someone arriving
+     from a scanned QR, past a certificate warning, had no confirmation of what they were
+     looking at. It sits ABOVE the status chip because "what is this" comes before "is it
+     safe". Inline SVG with currentColor, the same pattern the chip's lock icon already
+     uses, so it costs no request and needs no asset route on a token-gated server.
+     --text on --bg is 11.95:1 and is already an approved pairing, so this introduces no
+     new colour combination for tests/test_palette.py to cover. */
+  .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 14px;
+           color: var(--text); font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+  .brand img { width: 36px; height: 28px; flex: none; }
+
   header { margin: 22px 0 26px; }
   h1 { font-size: 32px; line-height: 1.05; font-weight: 800; letter-spacing: -0.02em; margin: 14px 0 6px; }
   .sub { color: var(--text-2); font-size: 16px; line-height: 1.4; margin: 0; }
@@ -260,6 +271,20 @@
 </style>
 </head>
 <body>
+  <div class="brand">
+    <!-- The mark, inlined as a data URI rather than as an asset route. The page is a
+         single static file served from a token-gated server, so an <img src="/..."> would
+         mean a new route and a decision about whether it authenticates. It is the same
+         artwork as assets/app.ico, white on transparent, at 2x its render size.
+
+         A hand-ported SVG was tried first and abandoned: the source vector draws the
+         small viewfinder bar as a degenerate near-zero-length path, which renders as a
+         blob at this size, and nothing here can render an SVG to check. A raster of the
+         approved artwork cannot be wrong about the shape. -->
+    <img class="brand-mark" src="data:image/png;base64,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" alt="" />
+    Photo Ferry
+  </div>
+
   <span class="chip">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
     Local &amp; encrypted
